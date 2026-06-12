@@ -17,16 +17,20 @@ final class LinkPreview: ObservableObject {
     @Published var snippet: String?
     @Published var resolvedPath: String?
     @Published var isLoading = false
+    /// Non-nil when the link is a qualified [[vault:note]] cross-vault reference.
+    @Published var crossVaultRef: GlobalNoteRef?
 
     private let client: SvodClient
     private var loadTask: Task<Void, Never>?
     init(client: SvodClient) { self.client = client }
 
+    /// Show preview for a same-vault wikilink.
     func show(target: String, resolvedPath: String?, anchor: CGRect) {
         guard target != self.target else { self.anchor = anchor; return }
         self.target = target
         self.anchor = anchor
         self.resolvedPath = resolvedPath
+        self.crossVaultRef = nil
         self.snippet = nil
         loadTask?.cancel()
         guard let path = resolvedPath else { isLoading = false; return }
@@ -39,9 +43,29 @@ final class LinkPreview: ObservableObject {
         }
     }
 
+    /// Show preview for a qualified [[vault:note]] cross-vault link without
+    /// switching the active vault (uses `readFile(path:inVault:)`).
+    func showCrossVault(ref: GlobalNoteRef, anchor: CGRect) {
+        let key = ref.globalId
+        guard key != self.target else { self.anchor = anchor; return }
+        self.target = key
+        self.anchor = anchor
+        self.crossVaultRef = ref
+        self.resolvedPath = ref.path   // used by the card header icon
+        self.snippet = nil
+        loadTask?.cancel()
+        isLoading = true
+        loadTask = Task {
+            let content = try? await client.readFile(path: ref.path, inVault: ref.vault)
+            if Task.isCancelled { return }
+            isLoading = false
+            if let content { snippet = Self.firstLines(of: content.content) }
+        }
+    }
+
     func hide() {
         loadTask?.cancel()
-        target = nil; snippet = nil; resolvedPath = nil; isLoading = false
+        target = nil; snippet = nil; resolvedPath = nil; crossVaultRef = nil; isLoading = false
     }
 
     /// Body preview: drop frontmatter, take the first non-empty lines.
@@ -64,11 +88,27 @@ struct LinkPreviewCard: View {
             HStack(spacing: Spacing.xs) {
                 Image(systemName: model.resolvedPath == nil ? "doc.badge.plus" : "doc.text")
                     .imageScale(.small)
-                    .foregroundStyle(model.resolvedPath == nil ? ThemeColor.linkUnresolved : ThemeColor.link)
-                Text(model.target ?? "")
-                    .font(Typography.callout.weight(.medium))
-                    .foregroundStyle(ThemeColor.textPrimary)
-                    .lineLimit(1)
+                    .foregroundStyle(model.crossVaultRef != nil ? ThemeColor.accentMuted
+                                     : model.resolvedPath == nil ? ThemeColor.linkUnresolved
+                                     : ThemeColor.link)
+                if let ref = model.crossVaultRef {
+                    Text(ref.vault)
+                        .font(Typography.caption.weight(.semibold))
+                        .foregroundStyle(ThemeColor.accentMuted)
+                        .accessibilityLabel("Vault \(ref.vault)")
+                    Text(":")
+                        .font(Typography.caption)
+                        .foregroundStyle(ThemeColor.textTertiary)
+                    Text(ref.path)
+                        .font(Typography.callout.weight(.medium))
+                        .foregroundStyle(ThemeColor.textPrimary)
+                        .lineLimit(1)
+                } else {
+                    Text(model.target ?? "")
+                        .font(Typography.callout.weight(.medium))
+                        .foregroundStyle(ThemeColor.textPrimary)
+                        .lineLimit(1)
+                }
             }
             if model.resolvedPath == nil {
                 Text("Not yet a note — saving a link creates it.")
@@ -91,6 +131,7 @@ struct LinkPreviewCard: View {
             .strokeBorder(ThemeColor.borderSubtle))
         .shadow(color: .black.opacity(0.25), radius: 16, y: 6)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Preview of \(model.target ?? "note")")
+        .accessibilityLabel(model.crossVaultRef.map { "Cross-vault preview of \($0.vault):\($0.path)" }
+                            ?? "Preview of \(model.target ?? "note")")
     }
 }
