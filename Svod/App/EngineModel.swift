@@ -45,6 +45,7 @@ public final class EngineModel: ObservableObject {
             app.connection = .connected
             reconnectAttempts = 0
             await loadMeta()
+            app.reloadVaults()
             startEventStream()
         } catch let e as SvodClientError where e.isOffline {
             app.connection = .disconnected
