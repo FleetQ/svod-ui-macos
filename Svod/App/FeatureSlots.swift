@@ -43,5 +43,12 @@ struct CommandPaletteSlot: View {
 struct ConflictSlot: View {
     @EnvironmentObject var app: AppModel
     let conflict: ConflictBody
-    var body: some View { ConflictMergeView(conflict: conflict, model: app.history) }
+    var body: some View {
+        ConflictMergeView(conflict: conflict, model: app.history)
+            .background(
+                Button("") { app.dismissConflict() }
+                    .keyboardShortcut(.cancelAction)
+                    .hidden()
+            )
+    }
 }

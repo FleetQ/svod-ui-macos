@@ -84,6 +84,10 @@ struct RootView: View {
             Button { app.toggleInspector() } label: { Image(systemName: "sidebar.right") }
                 .help("Toggle inspector")
         }
+        ToolbarItem(placement: .primaryAction) {
+            SettingsLink { Image(systemName: "gearshape") }
+                .help("Settings (⌘,)")
+        }
     }
 
     private var centerModeBinding: Binding<CenterMode> {

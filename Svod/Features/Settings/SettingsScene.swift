@@ -1,4 +1,22 @@
 import SwiftUI
+import AppKit
+
+// MARK: - Close-on-Esc
+//
+// A hidden window-wide Escape handler that closes the containing window. Used to
+// give the Settings window (and other auxiliary panels) a consistent Esc-to-close.
+struct CloseOnEsc: ViewModifier {
+    func body(content: Content) -> some View {
+        content.background(
+            Button("") { NSApp.keyWindow?.performClose(nil) }
+                .keyboardShortcut(.cancelAction)
+                .hidden()
+        )
+    }
+}
+extension View {
+    func closeOnEsc() -> some View { modifier(CloseOnEsc()) }
+}
 
 // MARK: - SettingsScene
 //
@@ -53,6 +71,7 @@ struct SettingsScene: View {
                 .navigationTitle(section.title)
         }
         .frame(minWidth: 720, minHeight: 480)
+        .closeOnEsc()
     }
 
     @ViewBuilder private var detail: some View {
