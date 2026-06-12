@@ -158,6 +158,37 @@ public final class MockSvodClient: SvodClient, @unchecked Sendable {
         return Conflicts(conflicts: [])   // none by default; sync (Step 7) is not live yet
     }
 
+    @discardableResult
+    public func resolveConflict(path: String, content: String, expectedRevision: String?) async throws -> WriteResult {
+        try await gate()
+        return WriteResult(path: path, revision: "rev-resolved", commit: Self.newCommit())
+    }
+
+    // sync & backup — canned config + acks; syncNow exercises the 501 path.
+    public func syncConfig(vault: String?) async throws -> SyncConfig {
+        try await gate()
+        return SyncConfig(backupRemote: "git@hetzner:svod-backup.git", backupEnabled: true,
+                          syncPeers: [], role: "authority", hostId: "mac")
+    }
+    @discardableResult
+    public func setBackup(vault: String?, remote: String, enabled: Bool) async throws -> SyncConfig {
+        try await gate()
+        return SyncConfig(backupRemote: remote, backupEnabled: enabled, syncPeers: [], role: "authority", hostId: "mac")
+    }
+    @discardableResult
+    public func reindex(vault: String?) async throws -> MaintenanceAck {
+        try await gate(); return MaintenanceAck(started: true, docCount: 1287)
+    }
+    @discardableResult
+    public func backupNow(vault: String?) async throws -> BackupAck {
+        try await gate(); return BackupAck(ok: true, head: "32af73c")
+    }
+    @discardableResult
+    public func syncNow(vault: String?) async throws -> SyncAck {
+        try await gate()
+        throw SvodClientError.notImplemented("Multi-host sync is not available yet (Step 7).")
+    }
+
     // MARK: events — synthetic, calm cadence
     public func events() -> AsyncThrowingStream<SvodEvent, Error> {
         AsyncThrowingStream { continuation in

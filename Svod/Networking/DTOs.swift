@@ -226,11 +226,66 @@ public struct Conflicts: Codable, Hashable, Sendable {
     public struct Item: Codable, Hashable, Sendable, Identifiable {
         public var path: String
         public var reasons: [String]?
+        // engine v0.3.0+: 3-way content now ships with the conflict list.
+        public var base: String?
+        public var ours: String?
+        public var theirs: String?
+        public var ts: Int64?
         public var id: String { path }
-        public init(path: String, reasons: [String]? = nil) { self.path = path; self.reasons = reasons }
+        public init(path: String, reasons: [String]? = nil,
+                    base: String? = nil, ours: String? = nil, theirs: String? = nil, ts: Int64? = nil) {
+            self.path = path; self.reasons = reasons
+            self.base = base; self.ours = ours; self.theirs = theirs; self.ts = ts
+        }
     }
     public var conflicts: [Item]
     public init(conflicts: [Item]) { self.conflicts = conflicts }
+}
+
+/// Resolve a (sync) conflict with merged content — engine v0.3.0 `POST /conflicts/resolve`.
+public struct ResolveConflictRequest: Codable, Hashable, Sendable {
+    public var path: String
+    public var content: String
+    public var expectedRevision: String?
+    public init(path: String, content: String, expectedRevision: String? = nil) {
+        self.path = path; self.content = content; self.expectedRevision = expectedRevision
+    }
+}
+
+// MARK: - Sync & backup (engine v0.4.0 UI-settings endpoints; per-vault via ?vault=)
+public struct SyncConfig: Codable, Hashable, Sendable {
+    public var backupRemote: String?
+    public var backupEnabled: Bool
+    public var syncPeers: [String]
+    public var role: String?
+    public var hostId: String?
+    public init(backupRemote: String? = nil, backupEnabled: Bool = false,
+                syncPeers: [String] = [], role: String? = nil, hostId: String? = nil) {
+        self.backupRemote = backupRemote; self.backupEnabled = backupEnabled
+        self.syncPeers = syncPeers; self.role = role; self.hostId = hostId
+    }
+}
+
+public struct BackupConfigRequest: Codable, Hashable, Sendable {
+    public var remote: String          // a git remote URL; secrets only as Secrets refs
+    public var enabled: Bool
+    public init(remote: String, enabled: Bool) { self.remote = remote; self.enabled = enabled }
+}
+
+public struct MaintenanceAck: Codable, Hashable, Sendable {
+    public var started: Bool
+    public var docCount: Int?
+}
+
+public struct BackupAck: Codable, Hashable, Sendable {
+    public var ok: Bool
+    public var head: String?
+}
+
+public struct SyncAck: Codable, Hashable, Sendable {
+    public var ok: Bool
+    public var head: String?
+    public var conflicts: Int?
 }
 
 public struct Metrics: Codable, Hashable, Sendable {

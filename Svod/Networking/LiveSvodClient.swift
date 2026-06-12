@@ -117,6 +117,38 @@ public final class LiveSvodClient: SvodClient, @unchecked Sendable {
     public func metrics() async throws -> Metrics { try await get("/api/v1/metrics") }
     public func conflicts() async throws -> Conflicts { try await get("/api/v1/conflicts") }
 
+    @discardableResult
+    public func resolveConflict(path: String, content: String, expectedRevision: String?) async throws -> WriteResult {
+        try await send("/api/v1/conflicts/resolve", method: "POST",
+                       body: ResolveConflictRequest(path: path, content: content, expectedRevision: expectedRevision))
+    }
+
+    // MARK: sync & backup (per-vault via ?vault=)
+    private func vaultQuery(_ vault: String?) -> [URLQueryItem] {
+        vault.map { [URLQueryItem(name: "vault", value: $0)] } ?? []
+    }
+
+    public func syncConfig(vault: String?) async throws -> SyncConfig {
+        try await get("/api/v1/sync/config", query: vaultQuery(vault))
+    }
+    @discardableResult
+    public func setBackup(vault: String?, remote: String, enabled: Bool) async throws -> SyncConfig {
+        try await send("/api/v1/settings/backup", method: "PUT", query: vaultQuery(vault),
+                       body: BackupConfigRequest(remote: remote, enabled: enabled))
+    }
+    @discardableResult
+    public func reindex(vault: String?) async throws -> MaintenanceAck {
+        try await sendNoBody("/api/v1/maintenance/reindex", method: "POST", query: vaultQuery(vault))
+    }
+    @discardableResult
+    public func backupNow(vault: String?) async throws -> BackupAck {
+        try await sendNoBody("/api/v1/backup/now", method: "POST", query: vaultQuery(vault))
+    }
+    @discardableResult
+    public func syncNow(vault: String?) async throws -> SyncAck {
+        try await sendNoBody("/api/v1/sync/now", method: "POST", query: vaultQuery(vault))
+    }
+
     // MARK: events (WebSocket)
     public func events() -> AsyncThrowingStream<SvodEvent, Error> {
         let wsURL = Self.websocketURL(from: baseURL)
@@ -215,6 +247,8 @@ public final class LiveSvodClient: SvodClient, @unchecked Sendable {
             throw SvodClientError.http(status: 409, message: "Conflict")
         case 400:
             throw SvodClientError.badRequest(Self.message(from: data, decoder: decoder))
+        case 501:
+            throw SvodClientError.notImplemented(Self.message(from: data, decoder: decoder))
         default:
             throw SvodClientError.http(status: http.statusCode, message: Self.message(from: data, decoder: decoder))
         }
