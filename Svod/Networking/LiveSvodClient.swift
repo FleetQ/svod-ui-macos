@@ -8,7 +8,7 @@ import Foundation
 
 public final class LiveSvodClient: SvodClient, @unchecked Sendable {
 
-    public let baseURL: URL
+    public private(set) var baseURL: URL
     private let session: URLSession
     private let decoder: JSONDecoder
     private let encoder: JSONEncoder
@@ -28,6 +28,10 @@ public final class LiveSvodClient: SvodClient, @unchecked Sendable {
         self.decoder = JSONDecoder()
         self.encoder = JSONEncoder()
     }
+
+    /// Redirect this (shared) client to a new endpoint. Subsequent calls — including
+    /// a freshly opened WebSocket — use the new base.
+    public func updateBaseURL(_ url: URL) { baseURL = url }
 
     // MARK: lifecycle
     public func health() async throws -> Health { try await get("/health") }

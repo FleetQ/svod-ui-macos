@@ -22,6 +22,9 @@ public final class AppModel: ObservableObject {
 
     public let client: SvodClient
 
+    /// All UI preferences (persisted). Read by feature models via their `app` ref.
+    public let settings = SettingsStore()
+
     // Cross-feature state
     @Published public var selectedPath: String?
     @Published public var connection: ConnectionState = .disconnected
@@ -68,6 +71,14 @@ public final class AppModel: ObservableObject {
         engine.objectWillChange
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
+        // Forward settings changes so the app shell (theme, endpoint) reacts.
+        settings.objectWillChange
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &cancellables)
+
+        // Seed feature defaults from settings.
+        search.mode = settings.defaultSearchMode
+        graph.scope = settings.defaultGraphScopeLocal ? .local : .global
     }
 
     private var cancellables = Set<AnyCancellable>()
@@ -75,8 +86,18 @@ public final class AppModel: ObservableObject {
     // MARK: navigation
     public func open(path: String) {
         selectedPath = path
+        settings.lastOpenedPath = path
         if centerMode == .graph { centerMode = .editor }
         commandPaletteVisible = false
+    }
+
+    // MARK: endpoint
+    /// Point the (shared) client at the configured host:port and reconnect. All
+    /// sub-models share one client instance, so updating its baseURL redirects
+    /// every call; the engine then re-opens the WebSocket against the new URL.
+    public func applyEndpoint() {
+        (client as? LiveSvodClient)?.updateBaseURL(settings.baseURL)
+        engine.reconnectNow()
     }
 
     // MARK: shell actions
@@ -93,6 +114,13 @@ public final class AppModel: ObservableObject {
 
     // MARK: lifecycle entry point used by SvodApp on launch
     public func bootstrap() {
+        // Honor a non-default endpoint before the first connection attempt.
+        if settings.baseURL != client.baseURL {
+            (client as? LiveSvodClient)?.updateBaseURL(settings.baseURL)
+        }
+        if settings.reopenLastNote, let last = settings.lastOpenedPath {
+            selectedPath = last
+        }
         engine.startConnecting()
     }
 }

@@ -10,11 +10,17 @@ struct SvodApp: App {
                 .environmentObject(app)
                 .frame(minWidth: 900, minHeight: 560)
                 .task { app.bootstrap() }
-                .preferredColorScheme(.dark)   // dark-first
+                .preferredColorScheme(app.settings.themeMode.colorScheme)   // dark-first default
         }
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unified(showsTitle: false))
         .defaultSize(width: 1200, height: 780)
+
+        SwiftUI.Settings {   // qualified: our DTO `Settings` shadows the scene
+            SettingsScene()
+                .environmentObject(app)
+                .preferredColorScheme(app.settings.themeMode.colorScheme)
+        }
         .commands {
             CommandGroup(after: .textEditing) {
                 Button("Search…") { app.toggleCommandPalette() }

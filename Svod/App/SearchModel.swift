@@ -50,7 +50,8 @@ public final class SearchModel: ObservableObject {
         isSearching = true; errorMessage = nil
         defer { isSearching = false; hasSearched = true }
         do {
-            let r = try await client.search(query: q, mode: mode, limit: 20,
+            let r = try await client.search(query: q, mode: mode,
+                                            limit: app?.settings.searchResultLimit ?? 20,
                                             tags: filterTags, pathPrefix: pathPrefix)
             self.results = r.hits
             self.selectedIndex = 0

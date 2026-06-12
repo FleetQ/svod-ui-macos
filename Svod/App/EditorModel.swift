@@ -12,7 +12,13 @@ public final class EditorModel: ObservableObject {
     public let client: SvodClient
 
     @Published public var file: FileContent?
-    @Published public var draft: String = ""
+    @Published public var draft: String = "" {
+        didSet {
+            guard !suppressAutosave, draft != oldValue else { return }
+            if !dirty { dirty = true }
+            scheduleAutosave()
+        }
+    }
     @Published public var isLoading = false
     @Published public var isSaving = false
     @Published public var errorMessage: String?
@@ -29,13 +35,31 @@ public final class EditorModel: ObservableObject {
 
     public var currentRevision: String? { file?.revision }
 
+    private var suppressAutosave = false
+    private var autosaveTask: Task<Void, Never>?
+
+    /// Debounced autosave, only when the setting is on. Cancels any in-flight wait
+    /// so a burst of keystrokes collapses into one write.
+    private func scheduleAutosave() {
+        guard app?.settings.autosave == true else { return }
+        autosaveTask?.cancel()
+        let ms = app?.settings.autosaveDebounceMs ?? 1200
+        autosaveTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(max(200, ms)) * 1_000_000)
+            if Task.isCancelled { return }
+            await self?.save()
+        }
+    }
+
     public func load(path: String) async {
         isLoading = true; errorMessage = nil
         defer { isLoading = false }
         do {
             let f = try await client.readFile(path: path)
             self.file = f
+            suppressAutosave = true
             self.draft = f.content
+            suppressAutosave = false
             self.dirty = false
             await loadSidecar(path: path)
         } catch let e as SvodClientError {

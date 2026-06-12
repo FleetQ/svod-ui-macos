@@ -22,13 +22,17 @@ public final class ActivityModel: ObservableObject {
     public func ingest(_ event: SvodEvent) {
         switch event.type {
         case .agentActivity, .commitCreated, .conflict, .fileChanged:
+            // Honor the feed type filters from settings (conflicts always shown).
+            if let s = app?.settings, event.type != .conflict, !s.showsEvent(event.type) { return }
             if let commit = event.data.commit {
                 if shownCommits.contains(commit) { return }
                 shownCommits.insert(commit)
             }
-            withAnimation(Motion.arrive) {
+            let limit = app?.settings.feedCap ?? cap
+            let animate = app?.settings.feedAnimation ?? true
+            withAnimation(animate ? Motion.arrive : nil) {
                 feed.insert(event, at: 0)
-                if feed.count > cap { feed.removeLast(feed.count - cap) }
+                if feed.count > limit { feed.removeLast(feed.count - limit) }
             }
         case .indexUpdated, .engineStatus, .unknown:
             break

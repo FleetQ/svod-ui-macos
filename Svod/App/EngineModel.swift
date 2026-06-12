@@ -71,6 +71,26 @@ public final class EngineModel: ObservableObject {
         startError = "Timed out waiting for the engine. Check the launchd agent."
     }
 
+    /// Restart = the same kickstart-and-poll flow as `start()`.
+    public func restart() async { await start() }
+
+    /// Stop the engine: `launchctl bootout gui/<uid>/dev.svod.engine`.
+    public func stop() {
+        disconnect()
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+        process.arguments = ["bootout", "gui/\(getuid())/\(Self.launchdLabel)"]
+        process.standardOutput = nil; process.standardError = nil
+        try? process.run()
+        app?.connection = .disconnected
+    }
+
+    /// Re-point/reconnect (used after an endpoint change).
+    public func reconnectNow() {
+        disconnect()
+        Task { await connect() }
+    }
+
     /// `launchctl kickstart -k gui/<uid>/dev.svod.engine`. No-ops gracefully if the
     /// agent isn't installed (the poll loop then times out into an error state).
     private func kickstart() {
@@ -109,6 +129,7 @@ public final class EngineModel: ObservableObject {
     private func handleDisconnect() async {
         guard let app else { return }
         if case .connected = app.connection { app.connection = .disconnected }
+        guard app.settings.autoReconnect else { return }
         reconnectAttempts += 1
         let delay = min(8.0, pow(1.6, Double(reconnectAttempts)))   // 1.6s … 8s
         try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
