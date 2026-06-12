@@ -70,14 +70,19 @@ struct RootView: View {
             .fixedSize()
         }
 
-        ToolbarItemGroup(placement: .primaryAction) {
+        // Separate items (not a group) so macOS applies its standard, roomier
+        // spacing between the connection pill, search, and inspector toggle.
+        ToolbarItem(placement: .primaryAction) {
             ConnectionIndicator()
+                .padding(.trailing, Spacing.xs)
+        }
+        ToolbarItem(placement: .primaryAction) {
             Button { app.toggleCommandPalette() } label: { Image(systemName: "magnifyingglass") }
                 .help("Search (⌘K)")
-            Button { app.toggleInspector() } label: {
-                Image(systemName: "sidebar.right")
-            }
-            .help("Toggle inspector")
+        }
+        ToolbarItem(placement: .primaryAction) {
+            Button { app.toggleInspector() } label: { Image(systemName: "sidebar.right") }
+                .help("Toggle inspector")
         }
     }
 
