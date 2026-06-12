@@ -1,0 +1,231 @@
+import SwiftUI
+
+// ════════════════════════════════════════════════════════════════════════
+// OWNED BY TEAMMATE 5 — Sidebar (Features/Sidebar/)
+//
+// Three sections in one scroll: the file tree (collapsible dirs, selectable
+// files), the tag taxonomy (tag + count → seeds a search), and saved searches.
+// Loading / empty / error are handled up front. The tree is keyboard-navigable
+// (arrows move, ←/→ collapse/expand dirs) and VoiceOver-labeled.
+// ════════════════════════════════════════════════════════════════════════
+
+struct SidebarView: View {
+    @ObservedObject var model: SidebarModel
+    @EnvironmentObject var app: AppModel
+
+    var body: some View {
+        Group {
+            if model.isLoading && model.tree == nil {
+                LoadingStateView("Loading vault…")
+            } else if let error = model.errorMessage, model.tree == nil {
+                ErrorStateView(message: error) { Task { await model.load() } }
+            } else if isEmptyTree {
+                EmptyStateView(icon: "tray", title: "Empty vault",
+                               message: "No notes yet. Create one to get started.")
+            } else {
+                content
+            }
+        }
+        .background(ThemeColor.surface)
+        .task { if model.tree == nil { await model.load() } }
+    }
+
+    private var isEmptyTree: Bool {
+        guard let tree = model.tree else { return false }
+        return (tree.children ?? []).isEmpty
+    }
+
+    private var content: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: Spacing.lg) {
+                fileTreeSection
+                if !model.tags.isEmpty { tagSection }
+                if !model.savedSearches.isEmpty { savedSearchSection }
+            }
+            .padding(Spacing.sm)
+        }
+    }
+
+    // MARK: file tree
+    private var fileTreeSection: some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            SectionLabel("Notes", systemImage: "folder")
+                .padding(.horizontal, Spacing.sm)
+            if let root = model.tree {
+                // Render the root's children directly; the "vault" root itself is
+                // implied by the pane, so we don't show it as a row.
+                ForEach(root.children ?? []) { node in
+                    TreeNodeRow(node: node, depth: 0, model: model, app: app)
+                }
+            }
+        }
+    }
+
+    // MARK: tags
+    private var tagSection: some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            SectionLabel("Tags", systemImage: "number")
+                .padding(.horizontal, Spacing.sm)
+            ForEach(model.tags) { tag in
+                ListRow(title: "#\(tag.tag)", isSelected: false) {
+                    Image(systemName: "number")
+                        .imageScale(.small)
+                        .foregroundStyle(ThemeColor.textTertiary)
+                } trailing: {
+                    Text("\(tag.count)")
+                        .font(Typography.caption)
+                        .foregroundStyle(ThemeColor.textTertiary)
+                        .monospacedDigit()
+                } action: {
+                    selectTag(tag.tag)
+                }
+                .accessibilityLabel("Tag \(tag.tag), \(tag.count) notes")
+                .accessibilityHint("Searches notes with this tag")
+            }
+        }
+    }
+
+    // MARK: saved searches
+    private var savedSearchSection: some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            SectionLabel("Saved Searches", systemImage: "bookmark")
+                .padding(.horizontal, Spacing.sm)
+            ForEach(model.savedSearches) { saved in
+                ListRow(title: saved.name, subtitle: saved.query) {
+                    Image(systemName: "bookmark")
+                        .imageScale(.small)
+                        .foregroundStyle(ThemeColor.textTertiary)
+                } action: {
+                    runSavedSearch(saved)
+                }
+            }
+        }
+    }
+
+    // MARK: actions
+    private func selectTag(_ tag: String) {
+        app.search.filterTags = [tag]
+        app.commandPaletteVisible = true
+    }
+
+    private func runSavedSearch(_ saved: SidebarModel.SavedSearch) {
+        app.search.query = saved.query
+        app.commandPaletteVisible = true
+    }
+}
+
+// MARK: - Tree row (recursive)
+private struct TreeNodeRow: View {
+    let node: TreeNode
+    let depth: Int
+    @ObservedObject var model: SidebarModel
+    let app: AppModel
+
+    @FocusState private var focused: Bool
+
+    private var isDir: Bool { node.type == .dir }
+    private var isExpanded: Bool { model.expanded.contains(node.path) }
+    private var isSelected: Bool { app.selectedPath == node.path }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.xxs) {
+            row
+            if isDir && isExpanded {
+                ForEach(node.children ?? []) { child in
+                    TreeNodeRow(node: child, depth: depth + 1, model: model, app: app)
+                }
+            }
+        }
+    }
+
+    private var row: some View {
+        Button(action: activate) {
+            HStack(spacing: Spacing.xs) {
+                // disclosure chevron only for dirs
+                Group {
+                    if isDir {
+                        Image(systemName: "chevron.right")
+                            .imageScale(.small)
+                            .foregroundStyle(ThemeColor.textTertiary)
+                            .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                    } else {
+                        Color.clear.frame(width: 9)
+                    }
+                }
+                .frame(width: 12)
+                Image(systemName: isDir ? "folder" : "doc.text")
+                    .imageScale(.small)
+                    .foregroundStyle(isDir ? ThemeColor.accentMuted : ThemeColor.textTertiary)
+                Text(node.name)
+                    .font(Typography.callout)
+                    .foregroundStyle(ThemeColor.textPrimary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer(minLength: 0)
+            }
+            .padding(.leading, CGFloat(depth) * Spacing.md + Spacing.xs)
+            .padding(.trailing, Spacing.sm)
+            .padding(.vertical, Spacing.xs)
+            .frame(minHeight: Spacing.rowHeight)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(rowBackground, in: RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusable(true)
+        .focused($focused)
+        .focusEffectDisabled()
+        // ←/→ collapse/expand dirs; ⏎/space activate.
+        .onKeyPress(.rightArrow) { if isDir && !isExpanded { withAnimation(Motion.quick) { model.toggle(node.path) }; return .handled }; return .ignored }
+        .onKeyPress(.leftArrow)  { if isDir && isExpanded  { withAnimation(Motion.quick) { model.toggle(node.path) }; return .handled }; return .ignored }
+        .onKeyPress(.return) { activate(); return .handled }
+        .onKeyPress(.space)  { activate(); return .handled }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityHint(isDir ? (isExpanded ? "Expanded folder. Activate to collapse." : "Collapsed folder. Activate to expand.") : "Opens this note")
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+    }
+
+    private func activate() {
+        if isDir {
+            withAnimation(Motion.quick) { model.toggle(node.path) }
+        } else {
+            app.open(path: node.path)
+        }
+    }
+
+    private var rowBackground: Color {
+        if isSelected { return ThemeColor.surfaceSelected }
+        if focused { return ThemeColor.surfaceHover }
+        return .clear
+    }
+
+    private var accessibilityLabel: String {
+        isDir ? "Folder \(node.name)" : "Note \(node.name)"
+    }
+}
+
+// MARK: - Previews
+#Preview("Sidebar — loaded") {
+    let app = AppModel(client: MockSvodClient.preview)
+    app.sidebar.expanded = ["vault/adr"]
+    app.selectedPath = "vault/architecture.md"
+    app.sidebar.savedSearches = [.init(name: "Open ADRs", query: "tag:adr status:open")]
+    return SidebarView(model: app.sidebar)
+        .environmentObject(app)
+        .frame(width: 260, height: 560)
+}
+
+#Preview("Sidebar — empty") {
+    let app = AppModel(client: MockSvodClient.empty)
+    return SidebarView(model: app.sidebar)
+        .environmentObject(app)
+        .frame(width: 260, height: 560)
+}
+
+#Preview("Sidebar — offline/error") {
+    let app = AppModel(client: MockSvodClient.offline)
+    return SidebarView(model: app.sidebar)
+        .environmentObject(app)
+        .frame(width: 260, height: 560)
+}
