@@ -30,14 +30,15 @@ struct MarkdownSyntaxHighlighter {
     }
 
     // Theme colors resolved to NSColor for the text system.
-    private let cText      = nsColor(ThemeColor.textPrimary)
-    private let cFaint     = nsColor(ThemeColor.textTertiary)
-    private let cSecondary = nsColor(ThemeColor.textSecondary)
-    private let cAccent    = nsColor(ThemeColor.accent)
-    private let cLink      = nsColor(ThemeColor.link)
-    private let cLinkBad   = nsColor(ThemeColor.linkUnresolved)
-    private let cCodeBg    = nsColor(ThemeColor.surfaceHover)
-    private let cCode      = nsColor(ThemeColor.accent)
+    private let cText         = nsColor(ThemeColor.textPrimary)
+    private let cFaint        = nsColor(ThemeColor.textTertiary)
+    private let cSecondary    = nsColor(ThemeColor.textSecondary)
+    private let cAccent       = nsColor(ThemeColor.accent)
+    private let cLink         = nsColor(ThemeColor.link)
+    private let cLinkBad      = nsColor(ThemeColor.linkUnresolved)
+    private let cLinkCross    = nsColor(ThemeColor.accentMuted)   // cross-vault [[vault:note]]
+    private let cCodeBg       = nsColor(ThemeColor.surfaceHover)
+    private let cCode         = nsColor(ThemeColor.accent)
 
     // MARK: entry point — restyle the whole storage
     func highlight(_ storage: NSTextStorage) {
@@ -174,13 +175,24 @@ struct MarkdownSyntaxHighlighter {
                        range: NSRange(location: full.location + full.length - markerWidth, length: markerWidth))
     }
 
-    // MARK: wikilinks  [[target]]  — resolved vs unresolved coloring
+    // MARK: wikilinks  [[target]]  and  [[vault:note]]  — coloring by kind + resolution
     private func styleWikilinks(_ s: NSTextStorage, _ text: String) {
         applyRegex("\\[\\[([^\\]\\n]+)\\]\\]", to: text) { m in
             let inner = (text as NSString).substring(with: m.range(at: 1))
             // strip an optional `|alias` for resolution
             let target = inner.split(separator: "|").first.map(String.init) ?? inner
-            let color = isResolved(target.trimmingCharacters(in: .whitespaces)) ? cLink : cLinkBad
+            let trimmed = target.trimmingCharacters(in: .whitespaces)
+
+            // Detect qualified [[vault:note]] links — they contain a colon and
+            // GlobalNoteRef can parse them (non-nil means it IS cross-vault).
+            let isCrossVault = GlobalNoteRef(globalId: trimmed) != nil
+            let color: NSColor
+            if isCrossVault {
+                // Cross-vault: accentMuted — distinct from same-vault link but calm.
+                color = cLinkCross
+            } else {
+                color = isResolved(trimmed) ? cLink : cLinkBad
+            }
             s.addAttribute(.foregroundColor, value: color, range: m.range)
             s.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: m.range(at: 1))
             // dim the `[[` `]]` brackets
@@ -188,8 +200,8 @@ struct MarkdownSyntaxHighlighter {
                            range: NSRange(location: m.range.location, length: 2))
             s.addAttribute(.foregroundColor, value: cFaint,
                            range: NSRange(location: m.range.location + m.range.length - 2, length: 2))
-            // tag the inner range so the view can hit-test for hover preview
-            s.addAttribute(.link, value: "svodwiki://\(target)", range: m.range(at: 1))
+            // tag the inner range with the full target (vault:path preserved for cross-vault)
+            s.addAttribute(.link, value: "svodwiki://\(trimmed)", range: m.range(at: 1))
         }
     }
 
