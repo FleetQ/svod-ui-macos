@@ -15,17 +15,35 @@ import SwiftUI
 
 struct SearchFiltersBar: View {
     @ObservedObject var model: SearchModel
+    @EnvironmentObject var app: AppModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
             HStack(spacing: Spacing.sm) {
                 modePicker
+                if app.vault.hasMultipleVaults {
+                    allVaultsToggle
+                }
                 pathPrefixField
             }
             if !model.availableTags.isEmpty {
                 tagChips
             }
         }
+    }
+
+    // MARK: all vaults toggle
+    private var allVaultsToggle: some View {
+        Button {
+            model.allVaults.toggle()
+            model.search()
+        } label: {
+            AllVaultsChip(active: model.allVaults)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Search all vaults")
+        .accessibilityAddTraits(model.allVaults ? [.isButton, .isSelected] : .isButton)
+        .accessibilityHint(model.allVaults ? "Selected. Activate to search active vault only" : "Activate to search across all vaults")
     }
 
     // MARK: mode
@@ -97,6 +115,26 @@ struct SearchFiltersBar: View {
     }
 }
 
+// MARK: - AllVaultsChip
+private struct AllVaultsChip: View {
+    let active: Bool
+
+    var body: some View {
+        HStack(spacing: Spacing.xxs) {
+            Image(systemName: "books.vertical")
+                .imageScale(.small)
+            Text("All vaults")
+                .font(Typography.caption)
+        }
+        .foregroundStyle(active ? ThemeColor.textOnAccent : ThemeColor.textSecondary)
+        .padding(.horizontal, Spacing.sm)
+        .padding(.vertical, Spacing.xxs)
+        .background(active ? ThemeColor.accent : ThemeColor.surfaceHover, in: Capsule())
+        .overlay(Capsule().strokeBorder(active ? .clear : ThemeColor.borderSubtle))
+        .animation(Motion.quick, value: active)
+    }
+}
+
 // MARK: - TagChip
 private struct TagChip: View {
     let tag: String
@@ -120,19 +158,31 @@ private struct TagChip: View {
     }
 }
 
-@MainActor private func filtersPreviewModel() -> SearchModel {
-    let m = AppModel(client: MockSvodClient.preview).search
-    m.availableTags = [
+@MainActor private func filtersPreviewApp() -> AppModel {
+    let app = AppModel(client: MockSvodClient.preview)
+    app.search.availableTags = [
         .init(tag: "svod", count: 14), .init(tag: "architecture", count: 8),
         .init(tag: "agents", count: 6), .init(tag: "index", count: 5),
     ]
-    m.filterTags = ["architecture"]
-    m.pathPrefix = "vault/adr"
-    return m
+    app.search.filterTags = ["architecture"]
+    app.search.pathPrefix = "vault/adr"
+    return app
 }
 
 #Preview("Filters") {
-    SearchFiltersBar(model: filtersPreviewModel())
+    let app = filtersPreviewApp()
+    SearchFiltersBar(model: app.search)
+        .environmentObject(app)
+        .padding(Spacing.lg)
+        .frame(width: 560)
+        .background(ThemeColor.surfaceRaised)
+}
+
+#Preview("Filters – All vaults toggle") {
+    let app = filtersPreviewApp()
+    app.search.allVaults = true
+    return SearchFiltersBar(model: app.search)
+        .environmentObject(app)
         .padding(Spacing.lg)
         .frame(width: 560)
         .background(ThemeColor.surfaceRaised)

@@ -132,8 +132,9 @@ struct CommandPaletteView: View {
     }
 
     private var idlePrompt: some View {
-        EmptyStateView(icon: "magnifyingglass", title: "Search your vault",
-                       message: "Find notes by keyword or meaning. Use ↑ ↓ to move, Return to open.")
+        let title = model.allVaults ? "Search all vaults" : "Search your vault"
+        let msg = "Find notes by keyword or meaning. Use ↑ ↓ to move, Return to open."
+        return EmptyStateView(icon: "magnifyingglass", title: title, message: msg)
             .frame(height: 240)
     }
 
@@ -244,4 +245,14 @@ private struct KeyHint: View {
 
 #Preview("Idle") {
     palette()
+}
+
+#Preview("Federated – all vaults") {
+    palette { m in
+        m.query = "retrieval"
+        m.allVaults = true
+        m.results = MockSvodClient.hits(for: "retrieval", vault: "notes", tagged: true)
+                  + MockSvodClient.hits(for: "retrieval", vault: "research", tagged: true)
+        m.hasSearched = true
+    }
 }

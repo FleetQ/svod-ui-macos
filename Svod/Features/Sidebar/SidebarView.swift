@@ -27,7 +27,14 @@ struct SidebarView: View {
             }
         }
         .background(ThemeColor.surface)
+        // Load on first appear; also reload whenever the active vault switches.
         .task { if model.tree == nil { await model.load() } }
+        .task(id: app.reloadEpoch) {
+            // reloadEpoch is bumped by AppModel.didSwitchVault(); skip the very
+            // first trigger (epoch == 0) to avoid a redundant double-load on launch.
+            guard app.reloadEpoch > 0 else { return }
+            await model.load()
+        }
     }
 
     private var isEmptyTree: Bool {
@@ -36,14 +43,36 @@ struct SidebarView: View {
     }
 
     private var content: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: Spacing.lg) {
-                fileTreeSection
-                if !model.tags.isEmpty { tagSection }
-                if !model.savedSearches.isEmpty { savedSearchSection }
+        VStack(spacing: 0) {
+            if app.vault.hasMultipleVaults { vaultHeader }
+            ScrollView {
+                VStack(alignment: .leading, spacing: Spacing.lg) {
+                    fileTreeSection
+                    if !model.tags.isEmpty { tagSection }
+                    if !model.savedSearches.isEmpty { savedSearchSection }
+                }
+                .padding(Spacing.sm)
             }
-            .padding(Spacing.sm)
         }
+    }
+
+    // Small vault context strip — only shown when multi-vault so single-vault setups
+    // see zero extra chrome.
+    @ViewBuilder private var vaultHeader: some View {
+        HStack(spacing: Spacing.xs) {
+            Image(systemName: "tray.full")
+                .imageScale(.small)
+                .foregroundStyle(ThemeColor.textTertiary)
+            Text(app.vault.activeVault?.name ?? "Vault")
+                .font(Typography.caption.weight(.medium))
+                .foregroundStyle(ThemeColor.textSecondary)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+            SidebarImportButton()
+        }
+        .padding(.horizontal, Spacing.sm)
+        .padding(.vertical, Spacing.xs)
+        .background(ThemeColor.surfaceRaised)
     }
 
     // MARK: file tree
@@ -111,6 +140,30 @@ struct SidebarView: View {
     private func runSavedSearch(_ saved: SidebarModel.SavedSearch) {
         app.search.query = saved.query
         app.commandPaletteVisible = true
+    }
+}
+
+// MARK: - Sidebar import button
+
+private struct SidebarImportButton: View {
+    @EnvironmentObject var app: AppModel
+    @State private var showImport = false
+
+    var body: some View {
+        Button {
+            showImport = true
+        } label: {
+            Image(systemName: "folder.badge.plus")
+                .imageScale(.small)
+                .foregroundStyle(ThemeColor.textTertiary)
+        }
+        .buttonStyle(.plain)
+        .help("Import Obsidian Vault…")
+        .accessibilityLabel("Import Obsidian Vault")
+        .sheet(isPresented: $showImport) {
+            ImportView()
+                .environmentObject(app)
+        }
     }
 }
 

@@ -46,6 +46,12 @@ struct GraphView: View {
             .padding(Spacing.md)
         }
         .task { if model.graph == nil { await model.load() } }
+        .task(id: app.reloadEpoch) {
+            // Vault switched: animate the old graph out, then load the new vault's graph.
+            guard app.reloadEpoch > 0 else { return }
+            withAnimation(Motion.standard) { model.clearGraph() }
+            await model.load()
+        }
     }
 
     // MARK: scope toggle
@@ -60,6 +66,11 @@ struct GraphView: View {
             .frame(width: 180)
             .help("Show the whole vault, or just the open note's neighborhood.")
             Spacer()
+            if app.vault.hasMultipleVaults, let name = app.vault.activeVault?.name {
+                Text(name)
+                    .font(Typography.caption)
+                    .foregroundStyle(ThemeColor.textSecondary)
+            }
         }
     }
 

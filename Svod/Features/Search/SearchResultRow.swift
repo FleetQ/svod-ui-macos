@@ -41,8 +41,11 @@ struct SearchResultRow: View {
                         relevanceDot
                     }
                     SnippetText(snippet: hit.snippet)
-                    if !matchBadges.isEmpty || !hit.tags.isEmpty {
+                    if !matchBadges.isEmpty || !hit.tags.isEmpty || hit.vault != nil {
                         HStack(spacing: Spacing.xs) {
+                            if let vaultId = hit.vault {
+                                StatusPill(vaultId, tone: .neutral, showsDot: false)
+                            }
                             ForEach(matchBadges, id: \.self) { badge in
                                 StatusPill(badge, tone: .accent, showsDot: false)
                             }
@@ -104,6 +107,7 @@ struct SearchResultRow: View {
 
     private var a11yLabel: String {
         var parts = ["\(hit.heading), \(prettyPath)"]
+        if let vaultId = hit.vault { parts.append("vault \(vaultId)") }
         parts.append(SnippetText.plain(hit.snippet))
         if hit.matchedKeyword && hit.matchedSemantic { parts.append("keyword and semantic match") }
         else if hit.matchedKeyword { parts.append("keyword match") }
@@ -115,10 +119,14 @@ struct SearchResultRow: View {
 }
 
 #Preview("SearchResultRow") {
+    let federatedHits = MockSvodClient.hits(for: "method", vault: "research", tagged: true)
     VStack(spacing: Spacing.xs) {
         SearchResultRow(hit: MockSvodClient.hits(for: "write").first!, isSelected: true) {}
         SearchResultRow(hit: MockSvodClient.hits(for: "write")[1], isSelected: false) {}
         SearchResultRow(hit: MockSvodClient.hits(for: "write")[2], isSelected: false) {}
+        if let fedHit = federatedHits.first {
+            SearchResultRow(hit: fedHit, isSelected: false) {}
+        }
     }
     .padding(Spacing.md)
     .frame(width: 560)

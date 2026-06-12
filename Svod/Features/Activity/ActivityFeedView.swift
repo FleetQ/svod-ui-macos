@@ -21,7 +21,18 @@ struct ActivityFeedView: View {
     /// nil we render the whole feed.
     var items: [SvodEvent]? = nil
 
-    private var feed: [SvodEvent] { items ?? model.feed }
+    /// Filter to the active vault only. Default false (show all).
+    @State private var filterActiveVault = false
+
+    private var feed: [SvodEvent] {
+        let base = items ?? model.feed
+        guard filterActiveVault, let activeId = app.vault.activeVaultId else { return base }
+        return base.filter { event in
+            // Events with no vault tag are assumed to belong to the active/default vault.
+            guard let v = event.data.vault else { return true }
+            return v == activeId
+        }
+    }
 
     var body: some View {
         Group {
@@ -32,10 +43,23 @@ struct ActivityFeedView: View {
                     ToolbarSurface {
                         SectionLabel("Agent Activity", systemImage: "dot.radiowaves.left.and.right")
                         Spacer()
+                        if app.vault.hasMultipleVaults {
+                            Toggle(isOn: $filterActiveVault) {
+                                Text("This vault")
+                                    .font(Typography.caption)
+                            }
+                            .toggleStyle(.button)
+                            .controlSize(.mini)
+                            .help(filterActiveVault
+                                  ? "Showing active vault only — click to show all"
+                                  : "Show active vault only")
+                            .accessibilityLabel(filterActiveVault ? "Filter: active vault" : "Filter: all vaults")
+                        }
                         if !model.feed.isEmpty {
-                            Text("\(model.feed.count)")
+                            Text("\(feed.count)")
                                 .font(Typography.caption)
                                 .foregroundStyle(ThemeColor.textTertiary)
+                                .monospacedDigit()
                         }
                     }
                     content
@@ -55,7 +79,9 @@ struct ActivityFeedView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: Spacing.xxs) {
                     ForEach(feed) { event in
-                        ActivityRow(event: event) { jump(to: event) }
+                        ActivityRow(event: event,
+                                    onJump: { jump(to: event) },
+                                    showVaultTag: !compact && app.vault.hasMultipleVaults)
                             .transition(Motion.feedInsertion)
                     }
                 }
@@ -78,6 +104,7 @@ struct ActivityFeedView: View {
 private struct ActivityRow: View {
     let event: SvodEvent
     let onJump: () -> Void
+    var showVaultTag = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var hovering = false
@@ -109,6 +136,12 @@ private struct ActivityRow: View {
                         .foregroundStyle(ThemeColor.textTertiary)
                         .lineLimit(1)
                         .truncationMode(.middle)
+                    if showVaultTag, let v = event.data.vault {
+                        Text(v)
+                            .font(Typography.caption2)
+                            .foregroundStyle(ThemeColor.accent.opacity(0.7))
+                            .lineLimit(1)
+                    }
                 }
                 Spacer(minLength: Spacing.xs)
                 Text(RelativeTime.string(from: event.date))
