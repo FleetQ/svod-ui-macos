@@ -20,6 +20,8 @@ struct MarkdownTextView: NSViewRepresentable {
     // callbacks up to EditorView (window-space rects)
     var onAutocomplete: (_ query: String?, _ caretRect: CGRect) -> Void
     var onHoverLink: (_ target: String?, _ resolvedPath: String?, _ rect: CGRect) -> Void
+    /// Called when the user clicks a `[[wikilink]]` or `[[vault:note]]` link.
+    var onOpenLink: (_ target: String) -> Void = { _ in }
     /// Bridge so the autocomplete popover can steer the text view via the coordinator.
     var register: (Coordinator) -> Void = { _ in }
 
@@ -239,6 +241,14 @@ struct MarkdownTextView: NSViewRepresentable {
         var onMove: ((Int) -> Void)?
         var onChoose: (() -> String?)?
         var onCancel: (() -> Void)?
+
+        // MARK: link click — open same-vault or cross-vault wikilink
+        func textView(_ view: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
+            guard let value = link as? String, value.hasPrefix("svodwiki://") else { return false }
+            let target = String(value.dropFirst("svodwiki://".count))
+            parent.onOpenLink(target)
+            return true
+        }
 
         // Use the layout manager to hit-test the .link attribute under the mouse.
         func hoverLinkProbe() {

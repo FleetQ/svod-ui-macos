@@ -76,6 +76,7 @@ struct EditorView: View {
                 isResolved: { model.resolves($0) },
                 onAutocomplete: handleAutocomplete,
                 onHoverLink: handleHover,
+                onOpenLink: handleOpenLink,
                 register: { coord in
                     coordinator = coord
                     coord.onMove = { autocomplete.moveSelection($0) }
@@ -134,11 +135,23 @@ struct EditorView: View {
     }
 
     private func handleHover(_ target: String?, _ resolvedPath: String?, _ rect: CGRect) {
-        if let target {
-            preview.show(target: target, resolvedPath: model.resolvedPath(for: target), anchor: rect)
+        guard let target else { preview.hide(); return }
+        if let ref = GlobalNoteRef(globalId: target) {
+            // Cross-vault [[vault:note]]: preview from the other vault without switching.
+            preview.showCrossVault(ref: ref, anchor: rect)
         } else {
-            preview.hide()
+            preview.show(target: target, resolvedPath: model.resolvedPath(for: target), anchor: rect)
         }
+    }
+
+    private func handleOpenLink(_ target: String) {
+        if let ref = GlobalNoteRef(globalId: target) {
+            // Qualified [[vault:note]]: switch vault then open path.
+            app.openGlobal(ref)
+        } else if let path = model.resolvedPath(for: target) {
+            app.open(path: path)
+        }
+        // Unresolved same-vault link: no-op (note doesn't exist yet).
     }
 }
 
