@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#252A37"/>
+      <stop offset="1" stop-color="#13151B"/>
+    </linearGradient>
+    <radialGradient id="sheen" cx="0.5" cy="0.16" r="0.7">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.06"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="key" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F4CC84"/>
+      <stop offset="1" stop-color="#CF8A34"/>
+    </linearGradient>
+    <linearGradient id="plinth" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#535B6A"/>
+      <stop offset="1" stop-color="#454D5B"/>
+    </linearGradient>
+    <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="16"/>
+    </filter>
+  </defs>
+
+  <!-- tile -->
+  <rect x="96.0" y="96.0" width="832" height="832" rx="186" ry="186" fill="url(#tile)"/>
+  <rect x="96.0" y="96.0" width="832" height="832" rx="186" ry="186" fill="url(#sheen)"/>
+
+  <!-- plinth (grounds the arch) -->
+  <rect x="188" y="644" width="648" height="38" rx="14" fill="url(#plinth)"/>
+
+  <!-- voussoirs -->
+  <g>
+    <path d="M801.79,578.96 A297.0,297.0 0 0 1 808.98,640.89 L684.99,642.19 A173.0,173.0 0 0 0 680.80,606.11 Z" fill="#535B6A"/>
+    <path d="M779.17,514.27 A297.0,297.0 0 0 1 800.36,572.90 L679.97,602.59 A173.0,173.0 0 0 0 667.62,568.43 Z" fill="#454D5B"/>
+    <path d="M742.32,456.49 A297.0,297.0 0 0 1 776.39,508.70 L666.01,565.19 A173.0,173.0 0 0 0 646.16,534.78 Z" fill="#535B6A"/>
+    <path d="M693.21,408.69 A297.0,297.0 0 0 1 738.34,451.71 L643.84,531.99 A173.0,173.0 0 0 0 617.56,506.93 Z" fill="#454D5B"/>
+    <path d="M634.46,373.42 A297.0,297.0 0 0 1 688.25,404.95 L614.66,504.75 A173.0,173.0 0 0 0 583.33,486.39 Z" fill="#535B6A"/>
+    <path d="M569.18,352.56 A297.0,297.0 0 0 1 628.76,370.91 L580.01,484.93 A173.0,173.0 0 0 0 545.31,474.24 Z" fill="#454D5B"/>
+    <path d="M395.24,370.91 A297.0,297.0 0 0 1 454.82,352.56 L478.69,474.24 A173.0,173.0 0 0 0 443.99,484.93 Z" fill="#535B6A"/>
+    <path d="M335.75,404.95 A297.0,297.0 0 0 1 389.54,373.42 L440.67,486.39 A173.0,173.0 0 0 0 409.34,504.75 Z" fill="#454D5B"/>
+    <path d="M285.66,451.71 A297.0,297.0 0 0 1 330.79,408.69 L406.44,506.93 A173.0,173.0 0 0 0 380.16,531.99 Z" fill="#535B6A"/>
+    <path d="M247.61,508.70 A297.0,297.0 0 0 1 281.68,456.49 L377.84,534.78 A173.0,173.0 0 0 0 357.99,565.19 Z" fill="#454D5B"/>
+    <path d="M223.64,572.90 A297.0,297.0 0 0 1 244.83,514.27 L356.38,568.43 A173.0,173.0 0 0 0 344.03,602.59 Z" fill="#535B6A"/>
+    <path d="M215.02,640.89 A297.0,297.0 0 0 1 222.21,578.96 L343.20,606.11 A173.0,173.0 0 0 0 339.01,642.19 Z" fill="#454D5B"/>
+  </g>
+
+  <!-- illuminated keystone -->
+  <g>
+    <path d="M460.94,351.42 A297.0,297.0 0 0 1 563.06,351.42 L541.74,473.58 A173.0,173.0 0 0 0 482.26,473.58 Z" fill="#F0A94A" opacity="0.55" filter="url(#glow)"/>
+    <path d="M460.94,351.42 A297.0,297.0 0 0 1 563.06,351.42 L541.74,473.58 A173.0,173.0 0 0 0 482.26,473.58 Z" fill="url(#key)" stroke="#9A6526" stroke-width="2"/>
+    <path d="M460.94,351.42 A297.0,297.0 0 0 1 563.06,351.42 L558.59,377.04 A271.0,271.0 0 0 0 465.41,377.04 Z" fill="#FCE3B0" opacity="0.7"/>
+  </g>
+</svg>
