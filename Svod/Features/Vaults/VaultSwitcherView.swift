@@ -2,10 +2,10 @@ import SwiftUI
 
 // MARK: - VaultSwitcherView  (Teammate 5 — Features/Vaults)
 //
-// Toolbar vault picker: shows the active vault and switches the whole app to another.
-// Hidden entirely when the engine exposes only one (or no) vault, so single-vault
-// setups see no extra chrome. PLACEHOLDER built in the foundation so the shell
-// compiles and works end-to-end; Teammate 5 owns and refines this file.
+// Toolbar vault picker: shows the active vault name + its sync dot, and lets the
+// user switch vaults. Hidden entirely when only one (or no) vault exists.
+// Each menu item carries its own sync dot + checkmark for the active vault,
+// and flags the default vault. Wired via VaultSwitcherSlot (frozen).
 
 struct VaultSwitcherView: View {
     @ObservedObject var model: VaultModel
@@ -14,40 +14,93 @@ struct VaultSwitcherView: View {
         if model.hasMultipleVaults {
             Menu {
                 ForEach(model.vaults) { v in
-                    Button {
-                        model.switchVault(v.id)
-                    } label: {
-                        Label {
-                            Text(v.name) + Text(v.isDefault ? "  (default)" : "")
-                        } icon: {
-                            if v.id == model.activeVaultId { Image(systemName: "checkmark") }
+                    Button { model.switchVault(v.id) } label: {
+                        HStack {
+                            // Checkmark on active
+                            if v.id == model.activeVaultId {
+                                Image(systemName: "checkmark")
+                            }
+                            Text(v.name + (v.isDefault ? " (default)" : ""))
+                            Spacer()
+                            // Per-vault sync dot via text if conflicts
+                            if let s = v.sync {
+                                syncDotLabel(s)
+                            }
                         }
                     }
                 }
+                Divider()
+                importMenuItem
             } label: {
                 HStack(spacing: Spacing.xxs) {
                     Image(systemName: "tray.full")
+                        .imageScale(.small)
                     Text(model.activeVault?.name ?? "Vault")
-                    if let s = model.activeVault?.sync { syncDot(s) }
+                        .font(Typography.callout)
+                    if let s = model.activeVault?.sync { inlineSyncDot(s) }
+                    Image(systemName: "chevron.down")
+                        .imageScale(.small)
+                        .foregroundStyle(ThemeColor.textTertiary)
                 }
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
-            .help("Active vault")
+            .help("Switch vault — active: \(model.activeVault?.name ?? "—")")
+            .accessibilityLabel("Vault switcher, current vault \(model.activeVault?.name ?? "none")")
         }
     }
 
-    @ViewBuilder private func syncDot(_ s: SyncStatus) -> some View {
+    // Tiny dot for the toolbar button label
+    @ViewBuilder private func inlineSyncDot(_ s: SyncStatus) -> some View {
         Circle()
             .fill(s.conflicts > 0 ? ThemeColor.conflict : ThemeColor.sync)
             .frame(width: 6, height: 6)
             .help(s.conflicts > 0 ? "\(s.conflicts) conflict(s)" : "Synced (\(s.role))")
+            .accessibilityLabel(s.conflicts > 0 ? "\(s.conflicts) conflicts" : "synced")
+    }
+
+    // Text-based indicator inside menu items (SwiftUI menus don't render Circle well)
+    @ViewBuilder private func syncDotLabel(_ s: SyncStatus) -> some View {
+        if s.conflicts > 0 {
+            Text("⚠ \(s.conflicts)")
+                .font(Typography.caption)
+                .foregroundStyle(ThemeColor.conflict)
+        } else {
+            Text("●")
+                .font(Typography.caption)
+                .foregroundStyle(ThemeColor.sync)
+        }
+    }
+
+    // "Import Obsidian Vault…" in the menu — surfaces ImportView without touching frozen files
+    private var importMenuItem: some View {
+        ImportMenuButton()
+    }
+}
+
+// MARK: - ImportMenuButton — presents ImportView as a sheet
+
+private struct ImportMenuButton: View {
+    @EnvironmentObject var app: AppModel
+    @State private var showImport = false
+
+    var body: some View {
+        Button {
+            showImport = true
+        } label: {
+            Label("Import Obsidian Vault…", systemImage: "folder.badge.plus")
+        }
+        .sheet(isPresented: $showImport) {
+            ImportView()
+                .environmentObject(app)
+        }
     }
 }
 
 #Preview {
     let app = AppModel(client: MockSvodClient.preview)
     return VaultSwitcherView(model: app.vault)
+        .environmentObject(app)
         .task { await app.vault.load() }
         .padding()
 }
