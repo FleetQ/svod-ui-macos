@@ -36,6 +36,7 @@ struct InspectorView: View {
             VStack(alignment: .leading, spacing: Spacing.lg) {
                 header(path: path)
                 backlinksCard
+                crossVaultBacklinksCard
                 historyCard(path: path)
                 activityCard(path: path)
             }
@@ -84,6 +85,21 @@ struct InspectorView: View {
                     }
                 } else if errorMessage != nil {
                     emptyHint("Couldn't load links.")
+                }
+            }
+        }
+    }
+
+    // MARK: cross-vault backlinks
+    @ViewBuilder private var crossVaultBacklinksCard: some View {
+        let refs = links?.crossVaultRefs ?? []
+        if !refs.isEmpty {
+            Card {
+                VStack(alignment: .leading, spacing: Spacing.sm) {
+                    SectionLabel("Linked from other vaults", systemImage: "tray.2")
+                    ForEach(refs) { ref in
+                        CrossVaultLinkRow(ref: ref) { app.openGlobal(ref) }
+                    }
                 }
             }
         }
@@ -213,6 +229,49 @@ private struct LinkRow: View {
                     .accessibilityLabel("Unresolved link \(label)")
             }
         }
+    }
+}
+
+// MARK: - Cross-vault link row
+
+private struct CrossVaultLinkRow: View {
+    let ref: GlobalNoteRef
+    let action: () -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: Spacing.sm) {
+                Image(systemName: "arrow.uturn.left")
+                    .imageScale(.small)
+                    .foregroundStyle(ThemeColor.accent)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text((ref.path as NSString).lastPathComponent)
+                        .font(Typography.callout)
+                        .foregroundStyle(ThemeColor.textPrimary)
+                        .lineLimit(1).truncationMode(.middle)
+                    Text("\(ref.vault): \(ref.path)")
+                        .font(Typography.caption)
+                        .foregroundStyle(ThemeColor.textTertiary)
+                        .lineLimit(1).truncationMode(.middle)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "arrow.right.circle")
+                    .imageScale(.small)
+                    .foregroundStyle(ThemeColor.textTertiary)
+            }
+            .padding(.horizontal, Spacing.xs)
+            .padding(.vertical, Spacing.xs)
+            .background(hovering ? ThemeColor.surfaceHover : .clear,
+                        in: RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Cross-vault link from \(ref.vault): \((ref.path as NSString).lastPathComponent)")
+        .accessibilityHint("Switches to vault \(ref.vault) and opens this note")
     }
 }
 
