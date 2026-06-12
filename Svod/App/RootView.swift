@@ -100,6 +100,11 @@ struct RootView: View {
                 CommandPaletteSlot()
                     .padding(.top, 80)
                     .transition(.move(edge: .top).combined(with: .opacity))
+                // Window-level Esc: closes the palette even if the search field
+                // isn't focused (.cancelAction fires from anywhere in the window).
+                Button("") { app.commandPaletteVisible = false }
+                    .keyboardShortcut(.cancelAction)
+                    .hidden()
             }
             .zIndex(10)
         }

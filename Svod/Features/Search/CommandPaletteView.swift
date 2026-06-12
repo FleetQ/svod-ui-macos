@@ -14,7 +14,7 @@ import SwiftUI
 //   • field auto-focuses on appear
 //   • ↑ / ↓ move `selectedIndex` (handled on the field so they work while typing)
 //   • ⏎ opens the selected hit (app.open closes the palette)
-//   • Esc clears a non-empty query, else dismisses the palette
+//   • Esc dismisses the palette (single press)
 //
 // Integration: CommandPaletteSlot's body becomes `CommandPaletteView(model: app.search)`.
 
@@ -163,13 +163,8 @@ struct CommandPaletteView: View {
     }
 
     private func handleEscape() {
-        if !model.query.isEmpty {
-            model.query = ""
-            model.search()
-            fieldFocused = true
-        } else {
-            app.commandPaletteVisible = false
-        }
+        // Esc always closes the palette (single press), regardless of query state.
+        app.commandPaletteVisible = false
     }
 }
 
