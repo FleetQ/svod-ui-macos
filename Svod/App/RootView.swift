@@ -106,28 +106,28 @@ struct RootView: View {
     }
 }
 
-// MARK: - Connection indicator (reads engine state)
+// MARK: - Connection indicator (reads engine state; opens the Engine panel)
 private struct ConnectionIndicator: View {
     @EnvironmentObject var app: AppModel
+    @State private var showEnginePanel = false
+
     var body: some View {
         let state = app.connection
-        Group {
+        Button { showEnginePanel.toggle() } label: {
             switch state {
-            case .connected:
-                StatusPill(state.label, tone: .success)
-            case .starting, .connecting:
-                StatusPill(state.label, tone: .warning, pulses: true)
-            case .error(let msg):
-                StatusPill("Error", tone: .danger).help(msg)
-            case .disconnected:
-                Button { Task { await app.engine.start() } } label: {
-                    StatusPill("Start Svod", tone: .offline, showsDot: false)
-                }
-                .buttonStyle(.plain)
-                .help("Start the Svod engine")
+            case .connected:             StatusPill(state.label, tone: .success)
+            case .starting, .connecting: StatusPill(state.label, tone: .warning, pulses: true)
+            case .error:                 StatusPill("Error", tone: .danger)
+            case .disconnected:          StatusPill("Start Svod", tone: .offline, showsDot: false)
             }
         }
+        .buttonStyle(.plain)
+        .help("Engine status")
         .animation(Motion.quick, value: state)
+        .popover(isPresented: $showEnginePanel, arrowEdge: .bottom) {
+            EngineStatusView(model: app.engine)
+                .environmentObject(app)
+        }
     }
 }
 
