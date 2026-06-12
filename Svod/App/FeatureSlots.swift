@@ -23,6 +23,11 @@ struct InspectorSlot: View {
     var body: some View { InspectorView() }
 }
 
+struct VaultSwitcherSlot: View {
+    @EnvironmentObject var app: AppModel
+    var body: some View { VaultSwitcherView(model: app.vault) }
+}
+
 struct GraphSlot: View {
     @EnvironmentObject var app: AppModel
     var body: some View { GraphView(model: app.graph) }

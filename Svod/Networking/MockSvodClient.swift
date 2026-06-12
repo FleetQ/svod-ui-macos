@@ -10,6 +10,11 @@ import Foundation
 public final class MockSvodClient: SvodClient, @unchecked Sendable {
 
     public let baseURL = URL(string: "http://127.0.0.1:7517")!
+    public private(set) var activeVault: String?
+    public func setActiveVault(_ vault: String?) { activeVault = vault }
+
+    /// The vault canned methods read from: the active vault, or the default ("notes").
+    private var currentVault: String { activeVault ?? "notes" }
 
     /// Toggle behaviors for previewing non-happy states.
     public enum Behavior: Sendable { case ok, offline, slow, empty }
@@ -33,12 +38,18 @@ public final class MockSvodClient: SvodClient, @unchecked Sendable {
     public func tree() async throws -> TreeNode {
         try await gate()
         if behavior == .empty { return TreeNode(name: "vault", path: "vault", type: .dir, children: []) }
-        return Self.tree
+        return Self.tree(for: currentVault)
     }
 
     public func readFile(path: String) async throws -> FileContent {
         try await gate()
-        guard let f = Self.files[path] else { throw SvodClientError.notFound }
+        guard let f = Self.files(for: currentVault)[path] else { throw SvodClientError.notFound }
+        return f
+    }
+
+    public func readFile(path: String, inVault vault: String) async throws -> FileContent {
+        try await gate()
+        guard let f = Self.files(for: vault)[path] else { throw SvodClientError.notFound }
         return f
     }
 
@@ -46,7 +57,7 @@ public final class MockSvodClient: SvodClient, @unchecked Sendable {
     public func writeFile(path: String, content: String, expectedRevision: String?) async throws -> WriteResult {
         try await gate()
         // Simulate a conflict when the caller's expectedRevision is stale.
-        if let expectedRevision, let current = Self.files[path], current.revision != expectedRevision {
+        if let expectedRevision, let current = Self.files(for: currentVault)[path], current.revision != expectedRevision {
             throw SvodClientError.conflict(ConflictBody(
                 path: path, expected: expectedRevision, current: current.revision,
                 currentContent: current.content))
@@ -88,28 +99,34 @@ public final class MockSvodClient: SvodClient, @unchecked Sendable {
 
     public func revision(path: String, revision: String) async throws -> FileContent {
         try await gate()
-        let base = Self.files[path]?.content ?? "# (older revision)\n"
+        let base = Self.files(for: currentVault)[path]?.content ?? "# (older revision)\n"
         return FileContent(path: path, revision: revision, content: base)
     }
 
     // MARK: graph / links
     public func fileLinks(path: String) async throws -> FileLinks {
         try await gate()
+        // The default vault's architecture note is linked-to from the research vault,
+        // so it carries a cross-vault backlink ("research:research/method.md").
+        let cross = (currentVault == "notes" && path == "vault/architecture.md")
+            ? ["research:research/method.md"] : nil
         return FileLinks(
             path: path,
             outlinks: [
                 .init(target: "embeddings", resolved: "vault/embeddings.md"),
                 .init(target: "lucene-index", resolved: "vault/lucene-index.md"),
+                .init(target: "research:method", resolved: "research:research/method.md"),
                 .init(target: "graal-native", resolved: nil),
             ],
             backlinks: ["vault/architecture.md", "vault/build-order.md"],
-            unresolved: ["graal-native"])
+            unresolved: ["graal-native"],
+            crossVaultBacklinks: cross)
     }
 
     public func graph() async throws -> Graph {
         try await gate()
         if behavior == .empty { return Graph(nodes: [], edges: [], unresolved: []) }
-        return Self.graph
+        return Self.graph(for: currentVault)
     }
 
     // MARK: search
@@ -118,7 +135,18 @@ public final class MockSvodClient: SvodClient, @unchecked Sendable {
         if behavior == .empty || query.isEmpty {
             return SearchResult(mode: mode.rawValue.uppercased(), hits: [])
         }
-        return SearchResult(mode: mode.rawValue.uppercased(), hits: Self.hits(for: query))
+        return SearchResult(mode: mode.rawValue.uppercased(), hits: Self.hits(for: query, vault: currentVault, tagged: false))
+    }
+
+    public func federatedSearch(query: String, mode: SearchMode, limit: Int?, tags: [String], pathPrefix: String?) async throws -> SearchResult {
+        try await gate()
+        if behavior == .empty || query.isEmpty {
+            return SearchResult(mode: mode.rawValue.uppercased(), hits: [])
+        }
+        // Hits from every vault, each tagged with its `vault`.
+        let all = Self.hits(for: query, vault: "notes", tagged: true)
+                + Self.hits(for: query, vault: "research", tagged: true)
+        return SearchResult(mode: mode.rawValue.uppercased(), hits: all)
     }
 
     // MARK: meta
@@ -155,7 +183,30 @@ public final class MockSvodClient: SvodClient, @unchecked Sendable {
     public func conflicts() async throws -> Conflicts {
         try await gate()
         if behavior == .empty { return Conflicts(conflicts: []) }
-        return Conflicts(conflicts: [])   // none by default; sync (Step 7) is not live yet
+        // One real sync conflict (default vault) with full 3-way content, so the
+        // History merge UI previews against base/ours/theirs.
+        return Conflicts(conflicts: [Self.sampleConflict])
+    }
+
+    // MARK: vaults / import
+    public func vaults() async throws -> Vaults {
+        try await gate()
+        return Vaults(vaults: [
+            .init(id: "notes", name: "Notes", isDefault: true,
+                  sync: SyncStatus(role: "authority", lastHead: "32af73c", conflicts: 1)),
+            .init(id: "research", name: "Research", isDefault: false,
+                  sync: SyncStatus(role: "follower", lastHead: "9f1c0d2", conflicts: 0)),
+        ])
+    }
+
+    @discardableResult
+    public func importVault(source: String, into: String?, vault: String?) async throws -> ImportResult {
+        try await gate()
+        let base = (into.map { $0 + "/" } ?? "")
+        return ImportResult(
+            imported: [base + "Daily/2026-06-10.md", base + "Projects/svod.md", base + "Inbox/idea.md"],
+            unchanged: [base + "README.md"],
+            skipped: [base + "Projects/secret.env"])   // present-but-differing or secret-blocked
     }
 
     @discardableResult
@@ -221,7 +272,12 @@ extension MockSvodClient {
 
     static func newCommit() -> String { String(format: "%08x", Int.random(in: 0..<0x7fffffff)) }
 
-    static let tree = TreeNode(name: "vault", path: "vault", type: .dir, children: [
+    // MARK: per-vault dispatch (two vaults: "notes" default, "research")
+    static func tree(for vault: String) -> TreeNode { vault == "research" ? researchTree : notesTree }
+    static func files(for vault: String) -> [String: FileContent] { vault == "research" ? researchFiles : notesFiles }
+    static func graph(for vault: String) -> Graph { vault == "research" ? researchGraph : notesGraph }
+
+    static let notesTree = TreeNode(name: "vault", path: "vault", type: .dir, children: [
         TreeNode(name: "architecture.md", path: "vault/architecture.md", type: .file),
         TreeNode(name: "embeddings.md", path: "vault/embeddings.md", type: .file),
         TreeNode(name: "lucene-index.md", path: "vault/lucene-index.md", type: .file),
@@ -234,7 +290,7 @@ extension MockSvodClient {
         ]),
     ])
 
-    static let files: [String: FileContent] = {
+    static let notesFiles: [String: FileContent] = {
         func f(_ path: String, _ rev: String, _ content: String) -> (String, FileContent) {
             (path, FileContent(path: path, revision: rev, content: content))
         }
@@ -320,7 +376,7 @@ extension MockSvodClient {
     +3. Commit per mutation; revision = blob hash.
     """
 
-    static let graph: Graph = Graph(
+    static let notesGraph: Graph = Graph(
         nodes: [
             .init(id: "vault/architecture.md", path: "vault/architecture.md"),
             .init(id: "vault/embeddings.md", path: "vault/embeddings.md"),
@@ -336,11 +392,118 @@ extension MockSvodClient {
         ],
         unresolved: [.init(source: "vault/architecture.md", target: "graal-native")])
 
-    static func hits(for query: String) -> [SearchHit] {
-        [
-            .init(path: "vault/architecture.md", heading: "Write path", snippet: "Serialize through the **write-actor**. Atomic tmp → fsync → rename.", score: 0.94, matchedKeyword: true, matchedSemantic: true, tags: ["architecture", "svod"]),
-            .init(path: "vault/embeddings.md", heading: "Embeddings", snippet: "BM25 is the guaranteed baseline; **semantics** are opt-in.", score: 0.71, matchedKeyword: false, matchedSemantic: true, tags: ["embeddings", "index"]),
-            .init(path: "vault/lucene-index.md", heading: "Lucene index", snippet: "BM25 + HNSW kNN with **RRF** fusion.", score: 0.63, matchedKeyword: true, matchedSemantic: false, tags: ["index"]),
+    // MARK: research vault (second vault, smaller)
+    static let researchTree = TreeNode(name: "research", path: "research", type: .dir, children: [
+        TreeNode(name: "method.md", path: "research/method.md", type: .file),
+        TreeNode(name: "sources.md", path: "research/sources.md", type: .file),
+        TreeNode(name: "findings", path: "research/findings", type: .dir, children: [
+            TreeNode(name: "retrieval-eval.md", path: "research/findings/retrieval-eval.md", type: .file),
+        ]),
+    ])
+
+    static let researchFiles: [String: FileContent] = {
+        func f(_ path: String, _ rev: String, _ content: String) -> (String, FileContent) {
+            (path, FileContent(path: path, revision: rev, content: content))
+        }
+        return Dictionary(uniqueKeysWithValues: [
+            f("research/method.md", "9f1c0d", """
+            ---
+            title: Method
+            tags: [research, method]
+            ---
+
+            # Method
+
+            Evaluating hybrid retrieval quality. The engine architecture is
+            documented in [[notes:vault/architecture.md]] — a cross-vault link.
+
+            We compare BM25, dense, and RRF fusion across a held-out set.
+            """),
+            f("research/sources.md", "7a2b11", """
+            ---
+            title: Sources
+            tags: [research]
+            ---
+
+            # Sources
+
+            - RRF (Cormack et al.)
+            - E5 multilingual embeddings
+            """),
+            f("research/findings/retrieval-eval.md", "3c4d55", """
+            ---
+            title: Retrieval eval
+            tags: [research, findings]
+            ---
+
+            # Retrieval eval
+
+            RRF fusion wins on recall@10 with negligible latency cost.
+            """),
+        ])
+    }()
+
+    static let researchGraph: Graph = Graph(
+        nodes: [
+            .init(id: "research/method.md", path: "research/method.md"),
+            .init(id: "research/sources.md", path: "research/sources.md"),
+            .init(id: "research/findings/retrieval-eval.md", path: "research/findings/retrieval-eval.md"),
+        ],
+        edges: [
+            .init(source: "research/method.md", target: "research/sources.md"),
+            .init(source: "research/method.md", target: "research/findings/retrieval-eval.md"),
+        ],
+        unresolved: [])
+
+    /// A surfaced sync conflict with full 3-way content (default vault).
+    static let sampleConflict = Conflicts.Item(
+        path: "vault/architecture.md",
+        reasons: ["Concurrent edit on two hosts"],
+        base: """
+        # Architecture
+
+        Svod is a local, git-backed markdown knowledge base.
+
+        ## Write path
+
+        1. Serialize through the write-actor.
+        """,
+        ours: """
+        # Architecture
+
+        Svod is a local, git-backed markdown knowledge base.
+
+        ## Write path
+
+        1. Serialize through the write-actor.
+        2. Atomic `tmp → fsync → rename`.
+        """,
+        theirs: """
+        # Architecture
+
+        Svod is a local, git-backed markdown knowledge base that never loses files.
+
+        ## Write path
+
+        1. Serialize through the write-actor.
+        """,
+        ts: 1_749_700_000_000)
+
+    /// Back-compat shim for preview call sites that predate multi-vault.
+    static func hits(for query: String) -> [SearchHit] { hits(for: query, vault: "notes", tagged: false) }
+
+    static func hits(for query: String, vault: String, tagged: Bool) -> [SearchHit] {
+        let tag: String? = tagged ? vault : nil
+        if vault == "research" {
+            return [
+                .init(path: "research/method.md", heading: "Method", snippet: "Evaluating **hybrid retrieval** quality across a held-out set.", score: 0.88, matchedKeyword: true, matchedSemantic: true, tags: ["research", "method"], vault: tag),
+                .init(path: "research/findings/retrieval-eval.md", heading: "Retrieval eval", snippet: "**RRF** fusion wins on recall@10.", score: 0.66, matchedKeyword: true, matchedSemantic: false, tags: ["research", "findings"], vault: tag),
+            ]
+        }
+        return [
+            .init(path: "vault/architecture.md", heading: "Write path", snippet: "Serialize through the **write-actor**. Atomic tmp → fsync → rename.", score: 0.94, matchedKeyword: true, matchedSemantic: true, tags: ["architecture", "svod"], vault: tag),
+            .init(path: "vault/embeddings.md", heading: "Embeddings", snippet: "BM25 is the guaranteed baseline; **semantics** are opt-in.", score: 0.71, matchedKeyword: false, matchedSemantic: true, tags: ["embeddings", "index"], vault: tag),
+            .init(path: "vault/lucene-index.md", heading: "Lucene index", snippet: "BM25 + HNSW kNN with **RRF** fusion.", score: 0.63, matchedKeyword: true, matchedSemantic: false, tags: ["index"], vault: tag),
         ]
     }
 

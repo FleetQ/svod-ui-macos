@@ -16,6 +16,12 @@ public protocol SvodClient: AnyObject, Sendable {
     /// Base endpoint, e.g. http://127.0.0.1:7517 — used for display and to derive ws://.
     var baseURL: URL { get }
 
+    /// Active vault id, applied as `?vault=` to every per-vault route. nil ⇒ the
+    /// engine's default vault. Set via `setActiveVault` when the user switches vaults;
+    /// one shared client means the switch redirects every subsequent fetch at once.
+    var activeVault: String? { get }
+    func setActiveVault(_ vault: String?)
+
     // lifecycle
     func health() async throws -> Health
     func ready() async throws -> Ready
@@ -43,6 +49,19 @@ public protocol SvodClient: AnyObject, Sendable {
 
     // search
     func search(query: String, mode: SearchMode, limit: Int?, tags: [String], pathPrefix: String?) async throws -> SearchResult
+    /// Federated search across ALL vaults (`across=true`). Each hit carries its `vault`.
+    /// NB: `across` is referenced by the contract's SearchHit doc but is not formally
+    /// declared as a /search parameter (v0.3.0) — verify against the live engine.
+    func federatedSearch(query: String, mode: SearchMode, limit: Int?, tags: [String], pathPrefix: String?) async throws -> SearchResult
+
+    // vaults (engine v0.3.0 multi-vault)
+    func vaults() async throws -> Vaults
+    /// One-shot Obsidian import into `vault` (nil ⇒ default). Idempotent.
+    @discardableResult
+    func importVault(source: String, into: String?, vault: String?) async throws -> ImportResult
+    /// Read a note from a SPECIFIC vault without changing the active vault — for
+    /// cross-vault [[vault:note]] previews / navigation.
+    func readFile(path: String, inVault vault: String) async throws -> FileContent
 
     // meta
     func tags() async throws -> Tags

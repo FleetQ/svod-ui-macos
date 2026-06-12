@@ -9,6 +9,7 @@ import Foundation
 public final class LiveSvodClient: SvodClient, @unchecked Sendable {
 
     public private(set) var baseURL: URL
+    public private(set) var activeVault: String?
     private let session: URLSession
     private let decoder: JSONDecoder
     private let encoder: JSONEncoder
@@ -33,21 +34,36 @@ public final class LiveSvodClient: SvodClient, @unchecked Sendable {
     /// a freshly opened WebSocket — use the new base.
     public func updateBaseURL(_ url: URL) { baseURL = url }
 
+    /// Switch the active vault. Every subsequent per-vault call appends `?vault=`.
+    public func setActiveVault(_ vault: String?) { activeVault = vault }
+
+    /// Per-vault query items: the explicit override if given, else the ambient
+    /// active vault, else nothing (engine default vault).
+    private func vaulted(_ extra: [URLQueryItem] = [], vault explicit: String? = nil) -> [URLQueryItem] {
+        var q = extra
+        if let v = explicit ?? activeVault { q.append(.init(name: "vault", value: v)) }
+        return q
+    }
+
     // MARK: lifecycle
     public func health() async throws -> Health { try await get("/health") }
     public func ready() async throws -> Ready { try await get("/ready") }
 
     // MARK: files
-    public func tree() async throws -> TreeNode { try await get("/api/v1/tree") }
+    public func tree() async throws -> TreeNode { try await get("/api/v1/tree", query: vaulted()) }
 
     public func readFile(path: String) async throws -> FileContent {
-        try await get("/api/v1/file", query: [.init(name: "path", value: path)])
+        try await get("/api/v1/file", query: vaulted([.init(name: "path", value: path)]))
+    }
+
+    public func readFile(path: String, inVault vault: String) async throws -> FileContent {
+        try await get("/api/v1/file", query: vaulted([.init(name: "path", value: path)], vault: vault))
     }
 
     @discardableResult
     public func writeFile(path: String, content: String, expectedRevision: String?) async throws -> WriteResult {
         try await send("/api/v1/file", method: "PUT",
-                       query: [.init(name: "path", value: path)],
+                       query: vaulted([.init(name: "path", value: path)]),
                        body: WriteRequest(content: content, expectedRevision: expectedRevision))
     }
 
@@ -55,18 +71,18 @@ public final class LiveSvodClient: SvodClient, @unchecked Sendable {
     public func deleteFile(path: String, expectedRevision: String?) async throws -> WriteResult {
         var q = [URLQueryItem(name: "path", value: path)]
         if let expectedRevision { q.append(.init(name: "expectedRevision", value: expectedRevision)) }
-        return try await sendNoBody("/api/v1/file", method: "DELETE", query: q)
+        return try await sendNoBody("/api/v1/file", method: "DELETE", query: vaulted(q))
     }
 
     @discardableResult
     public func moveFile(from: String, to: String, expectedRevision: String?) async throws -> MoveResult {
-        try await send("/api/v1/file/move", method: "POST",
+        try await send("/api/v1/file/move", method: "POST", query: vaulted(),
                        body: MoveRequest(from: from, to: to, expectedRevision: expectedRevision))
     }
 
     @discardableResult
     public func restoreFile(trashPath: String, to: String?) async throws -> WriteResult {
-        try await send("/api/v1/file/restore", method: "POST",
+        try await send("/api/v1/file/restore", method: "POST", query: vaulted(),
                        body: RestoreRequest(trashPath: trashPath, to: to))
     }
 
@@ -75,47 +91,66 @@ public final class LiveSvodClient: SvodClient, @unchecked Sendable {
         var q = [URLQueryItem(name: "path", value: path)]
         if let max { q.append(.init(name: "max", value: String(max))) }
         struct Wrapper: Decodable { let commits: [CommitInfo] }
-        let w: Wrapper = try await get("/api/v1/file/history", query: q)
+        let w: Wrapper = try await get("/api/v1/file/history", query: vaulted(q))
         return w.commits
     }
 
     public func diff(path: String, from: String, to: String) async throws -> DiffResult {
-        try await get("/api/v1/file/diff", query: [
+        try await get("/api/v1/file/diff", query: vaulted([
             .init(name: "path", value: path),
             .init(name: "from", value: from),
             .init(name: "to", value: to),
-        ])
+        ]))
     }
 
     public func revision(path: String, revision: String) async throws -> FileContent {
-        try await get("/api/v1/file/revision", query: [
+        try await get("/api/v1/file/revision", query: vaulted([
             .init(name: "path", value: path),
             .init(name: "revision", value: revision),
-        ])
+        ]))
     }
 
     // MARK: graph / links
     public func fileLinks(path: String) async throws -> FileLinks {
-        try await get("/api/v1/file/links", query: [.init(name: "path", value: path)])
+        try await get("/api/v1/file/links", query: vaulted([.init(name: "path", value: path)]))
     }
-    public func graph() async throws -> Graph { try await get("/api/v1/graph") }
+    public func graph() async throws -> Graph { try await get("/api/v1/graph", query: vaulted()) }
 
     // MARK: search
     public func search(query: String, mode: SearchMode, limit: Int?, tags: [String], pathPrefix: String?) async throws -> SearchResult {
+        try await get("/api/v1/search", query: vaulted(searchItems(query, mode, limit, tags, pathPrefix)))
+    }
+
+    public func federatedSearch(query: String, mode: SearchMode, limit: Int?, tags: [String], pathPrefix: String?) async throws -> SearchResult {
+        var q = searchItems(query, mode, limit, tags, pathPrefix)
+        q.append(.init(name: "across", value: "true"))   // federate over all vaults
+        return try await get("/api/v1/search", query: q)
+    }
+
+    private func searchItems(_ query: String, _ mode: SearchMode, _ limit: Int?, _ tags: [String], _ pathPrefix: String?) -> [URLQueryItem] {
         var q = [URLQueryItem(name: "q", value: query),
                  URLQueryItem(name: "mode", value: mode.rawValue)]
         if let limit { q.append(.init(name: "limit", value: String(limit))) }
         for t in tags { q.append(.init(name: "tags", value: t)) }
         if let pathPrefix, !pathPrefix.isEmpty { q.append(.init(name: "pathPrefix", value: pathPrefix)) }
-        return try await get("/api/v1/search", query: q)
+        return q
+    }
+
+    // MARK: vaults / import
+    public func vaults() async throws -> Vaults { try await get("/api/v1/vaults") }
+
+    @discardableResult
+    public func importVault(source: String, into: String?, vault: String?) async throws -> ImportResult {
+        try await send("/api/v1/import", method: "POST",
+                       body: ImportRequest(source: source, into: into, vault: vault))
     }
 
     // MARK: meta
-    public func tags() async throws -> Tags { try await get("/api/v1/tags") }
-    public func settings() async throws -> Settings { try await get("/api/v1/settings") }
-    public func indexStatus() async throws -> IndexStatus { try await get("/api/v1/index/status") }
-    public func metrics() async throws -> Metrics { try await get("/api/v1/metrics") }
-    public func conflicts() async throws -> Conflicts { try await get("/api/v1/conflicts") }
+    public func tags() async throws -> Tags { try await get("/api/v1/tags", query: vaulted()) }
+    public func settings() async throws -> Settings { try await get("/api/v1/settings", query: vaulted()) }
+    public func indexStatus() async throws -> IndexStatus { try await get("/api/v1/index/status", query: vaulted()) }
+    public func metrics() async throws -> Metrics { try await get("/api/v1/metrics", query: vaulted()) }
+    public func conflicts() async throws -> Conflicts { try await get("/api/v1/conflicts", query: vaulted()) }
 
     @discardableResult
     public func resolveConflict(path: String, content: String, expectedRevision: String?) async throws -> WriteResult {

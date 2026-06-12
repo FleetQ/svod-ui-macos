@@ -147,11 +147,16 @@ public struct SearchHit: Codable, Hashable, Sendable, Identifiable {
     public var matchedKeyword: Bool
     public var matchedSemantic: Bool
     public var tags: [String]
-    public var id: String { path + "#" + heading }
+    /// Vault id of this hit — only populated on a federated (`across=true`) search.
+    /// nil on a single-vault search (the hit is in the active vault).
+    public var vault: String?
+    // id must stay unique across vaults in federated results.
+    public var id: String { (vault.map { $0 + ":" } ?? "") + path + "#" + heading }
     public init(path: String, heading: String, snippet: String, score: Double,
-                matchedKeyword: Bool, matchedSemantic: Bool, tags: [String]) {
+                matchedKeyword: Bool, matchedSemantic: Bool, tags: [String], vault: String? = nil) {
         self.path = path; self.heading = heading; self.snippet = snippet; self.score = score
-        self.matchedKeyword = matchedKeyword; self.matchedSemantic = matchedSemantic; self.tags = tags
+        self.matchedKeyword = matchedKeyword; self.matchedSemantic = matchedSemantic
+        self.tags = tags; self.vault = vault
     }
 }
 
@@ -186,8 +191,36 @@ public struct FileLinks: Codable, Hashable, Sendable {
     public var outlinks: [OutLink]
     public var backlinks: [String]
     public var unresolved: [String]
-    public init(path: String, outlinks: [OutLink], backlinks: [String], unresolved: [String]) {
-        self.path = path; self.outlinks = outlinks; self.backlinks = backlinks; self.unresolved = unresolved
+    /// Notes in OTHER vaults that link here, as global ids ("vault:path"); engine v0.3.0+.
+    /// nil when single-vault or the engine doesn't populate it.
+    public var crossVaultBacklinks: [String]?
+    /// Parsed cross-vault backlinks for navigation; empty when none.
+    public var crossVaultRefs: [GlobalNoteRef] {
+        (crossVaultBacklinks ?? []).compactMap(GlobalNoteRef.init(globalId:))
+    }
+    public init(path: String, outlinks: [OutLink], backlinks: [String], unresolved: [String],
+                crossVaultBacklinks: [String]? = nil) {
+        self.path = path; self.outlinks = outlinks; self.backlinks = backlinks
+        self.unresolved = unresolved; self.crossVaultBacklinks = crossVaultBacklinks
+    }
+}
+
+/// A note addressed across vaults: the global id form is "vault:path"
+/// (e.g. "research:vault/method.md"). Used by qualified [[vault:note]] links
+/// and `FileLinks.crossVaultBacklinks`.
+public struct GlobalNoteRef: Hashable, Sendable, Identifiable {
+    public var vault: String
+    public var path: String
+    public var globalId: String { vault + ":" + path }
+    public var id: String { globalId }
+    public init(vault: String, path: String) { self.vault = vault; self.path = path }
+    /// Parse "vault:path"; nil if there's no vault prefix (a same-vault link).
+    public init?(globalId: String) {
+        guard let i = globalId.firstIndex(of: ":") else { return nil }
+        let v = String(globalId[..<i])
+        let p = String(globalId[globalId.index(after: i)...])
+        guard !v.isEmpty, !p.isEmpty else { return nil }
+        self.vault = v; self.path = p
     }
 }
 
@@ -312,4 +345,61 @@ public struct Metrics: Codable, Hashable, Sendable {
     public var index: Index
     public var conflicts: Int
     public var sync: Sync?
+}
+
+// MARK: - Vaults (engine v0.3.0 multi-vault)
+
+/// Per-vault sync standing (contract `SyncStatus`). Each vault is its own git repo,
+/// lock, index and sync, so sync state is reported per vault.
+public struct SyncStatus: Codable, Hashable, Sendable {
+    public var role: String              // e.g. "authority" | "follower" | "solo"
+    public var lastHead: String?
+    public var conflicts: Int
+    public init(role: String, lastHead: String? = nil, conflicts: Int = 0) {
+        self.role = role; self.lastHead = lastHead; self.conflicts = conflicts
+    }
+}
+
+public struct Vaults: Codable, Hashable, Sendable {
+    public struct Vault: Codable, Hashable, Sendable, Identifiable {
+        public var id: String
+        public var name: String
+        /// `default` on the wire — the vault used when `?vault=` is omitted.
+        public var isDefault: Bool
+        public var sync: SyncStatus?
+        public init(id: String, name: String, isDefault: Bool, sync: SyncStatus? = nil) {
+            self.id = id; self.name = name; self.isDefault = isDefault; self.sync = sync
+        }
+        enum CodingKeys: String, CodingKey {
+            case id, name, sync
+            case isDefault = "default"   // `default` is a Swift keyword
+        }
+    }
+    public var vaults: [Vault]
+    public init(vaults: [Vault]) { self.vaults = vaults }
+    public var defaultVault: Vault? { vaults.first(where: \.isDefault) ?? vaults.first }
+}
+
+public typealias Vault = Vaults.Vault
+
+/// Import an Obsidian vault directory (local path) into a Svod vault.
+public struct ImportRequest: Codable, Hashable, Sendable {
+    public var source: String            // local filesystem path to the Obsidian vault
+    public var into: String?             // optional subfolder prefix within the target vault
+    public var vault: String?            // target vault id; nil ⇒ default
+    public init(source: String, into: String? = nil, vault: String? = nil) {
+        self.source = source; self.into = into; self.vault = vault
+    }
+}
+
+/// imported = newly written, unchanged = already identical (idempotent re-run),
+/// skipped = present-but-differing (left as-is) or blocked by secret scanning.
+public struct ImportResult: Codable, Hashable, Sendable {
+    public var imported: [String]
+    public var unchanged: [String]
+    public var skipped: [String]
+    public init(imported: [String], unchanged: [String], skipped: [String]) {
+        self.imported = imported; self.unchanged = unchanged; self.skipped = skipped
+    }
+    public var total: Int { imported.count + unchanged.count + skipped.count }
 }

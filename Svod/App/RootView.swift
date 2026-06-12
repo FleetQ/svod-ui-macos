@@ -57,6 +57,9 @@ struct RootView: View {
                 }
             } label: { Image(systemName: "sidebar.left") }
             .help("Toggle sidebar")
+
+            // Active-vault indicator + switcher (hidden when single-vault).
+            VaultSwitcherSlot()
         }
 
         ToolbarItemGroup(placement: .principal) {

@@ -34,6 +34,9 @@ public struct EventPayload: Codable, Hashable, Sendable {
     public var message: String?
     public var docCount: Int?
     public var ready: Bool?
+    /// Vault id this event belongs to (engine v0.3.0 multi-vault). The contract
+    /// leaves `data` freeform, so this is best-effort: nil means default/unknown.
+    public var vault: String?
 
     /// Best-effort author identity for display, mirroring the reference viewer:
     /// agentId → author → "external" (watcher) → "ui".

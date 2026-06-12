@@ -30,6 +30,9 @@ public final class AppModel: ObservableObject {
     @Published public var connection: ConnectionState = .disconnected
     @Published public var latestEvent: SvodEvent?
     @Published public var activeConflict: ConflictBody?
+    /// Bumped on a vault switch. Vault-scoped panes (tree, graph, search) re-load
+    /// by keying a `.task(id: app.reloadEpoch)` on it.
+    @Published public var reloadEpoch = 0
 
     // Shell state
     @Published public var sidebarVisible = true
@@ -45,6 +48,8 @@ public final class AppModel: ObservableObject {
     public let activity: ActivityModel
     public let sidebar: SidebarModel
     public let engine: EngineModel
+    public let vault: VaultModel
+    public let inspector: InspectorModel
 
     public init(client: SvodClient) {
         self.client = client
@@ -55,6 +60,8 @@ public final class AppModel: ObservableObject {
         self.activity = ActivityModel(client: client)
         self.sidebar = SidebarModel(client: client)
         self.engine = EngineModel(client: client)
+        self.vault = VaultModel(client: client)
+        self.inspector = InspectorModel(client: client)
 
         // Back-references so feature models can navigate / present.
         editor.app = self
@@ -64,11 +71,17 @@ public final class AppModel: ObservableObject {
         activity.app = self
         sidebar.app = self
         engine.app = self
+        vault.app = self
+        inspector.app = self
 
         // Re-publish nested model changes so views observing only AppModel refresh.
         // (Views should prefer observing their own sub-model directly; this keeps
         // shell chrome — e.g. the toolbar — in sync without manual plumbing.)
         engine.objectWillChange
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &cancellables)
+        // Forward vault changes so the toolbar vault indicator/switcher refreshes.
+        vault.objectWillChange
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
         // Forward settings changes so the app shell (theme, endpoint) reacts.
@@ -89,6 +102,29 @@ public final class AppModel: ObservableObject {
         settings.lastOpenedPath = path
         if centerMode == .graph { centerMode = .editor }
         commandPaletteVisible = false
+    }
+
+    /// Open a note that may live in another vault (qualified [[vault:note]] link or a
+    /// federated search hit). Switches the active vault first, then opens the path.
+    public func openGlobal(_ ref: GlobalNoteRef) {
+        if ref.vault != vault.activeVaultId { vault.switchVault(ref.vault) }
+        open(path: ref.path)
+    }
+
+    /// Open a hit/result that carries an optional vault tag (federated search).
+    public func open(path: String, vault tag: String?) {
+        if let tag, tag != vault.activeVaultId { self.vault.switchVault(tag) }
+        open(path: path)
+    }
+
+    // MARK: vault switch
+    /// Called by VaultModel after the active vault changes. Clears the open note and
+    /// signals vault-scoped panes to reload.
+    public func didSwitchVault() {
+        selectedPath = nil
+        activeConflict = nil
+        reloadEpoch &+= 1
+        objectWillChange.send()
     }
 
     // MARK: endpoint
@@ -122,5 +158,10 @@ public final class AppModel: ObservableObject {
             selectedPath = last
         }
         engine.startConnecting()
+        // Load the vault list (degrades to a single implicit vault on older engines).
+        Task { await vault.load() }
     }
+
+    /// Reload vault-scoped state after a reconnect (e.g. engine restarted).
+    public func reloadVaults() { Task { await vault.load() } }
 }
