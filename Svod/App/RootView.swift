@@ -1,0 +1,146 @@
+import SwiftUI
+
+// MARK: - RootView
+//
+// The three-pane shell: sidebar | center (editor / graph / history) | inspector.
+// Native NavigationSplitView for the sidebar+center, `.inspector` for the trailing
+// pane, a unified translucent toolbar, and overlays for the ⌘K command palette and
+// the conflict merge sheet. FROZEN foundation file — feature teammates do not edit
+// it; the lead rewires `FeatureSlots` during integration.
+
+struct RootView: View {
+    @EnvironmentObject var app: AppModel
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
+
+    var body: some View {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
+            SidebarSlot()
+                .navigationSplitViewColumnWidth(
+                    min: Spacing.sidebarMinWidth, ideal: Spacing.sidebarWidth, max: 360)
+        } detail: {
+            center
+                .inspector(isPresented: $app.inspectorVisible) {
+                    InspectorSlot()
+                        .inspectorColumnWidth(
+                            min: Spacing.inspectorMinWidth, ideal: Spacing.inspectorWidth, max: 420)
+                }
+        }
+        .navigationTitle("")
+        .toolbar { toolbarContent }
+        .toolbarBackground(.regularMaterial, for: .windowToolbar)
+        .background(ThemeColor.background)
+        .overlay { commandPaletteOverlay }
+        .sheet(isPresented: conflictPresented) {
+            if let c = app.activeConflict { ConflictSlot(conflict: c) }
+        }
+        .onChange(of: columnVisibility) { _, new in
+            app.sidebarVisible = (new != .detailOnly)
+        }
+        .animation(Motion.pane, value: app.centerMode)
+    }
+
+    // MARK: center pane
+    @ViewBuilder private var center: some View {
+        switch app.centerMode {
+        case .editor:  EditorSlot()
+        case .graph:   GraphSlot()
+        case .history: HistorySlot()
+        }
+    }
+
+    // MARK: toolbar
+    @ToolbarContentBuilder private var toolbarContent: some ToolbarContent {
+        ToolbarItemGroup(placement: .navigation) {
+            Button {
+                withAnimation(Motion.pane) {
+                    columnVisibility = (columnVisibility == .detailOnly) ? .all : .detailOnly
+                }
+            } label: { Image(systemName: "sidebar.left") }
+            .help("Toggle sidebar")
+        }
+
+        ToolbarItemGroup(placement: .principal) {
+            Picker("View", selection: centerModeBinding) {
+                Image(systemName: "doc.text").tag(CenterMode.editor)
+                Image(systemName: "point.3.connected.trianglepath.dotted").tag(CenterMode.graph)
+                Image(systemName: "clock.arrow.circlepath").tag(CenterMode.history)
+            }
+            .pickerStyle(.segmented)
+            .help("Editor · Graph · History")
+            .fixedSize()
+        }
+
+        ToolbarItemGroup(placement: .primaryAction) {
+            ConnectionIndicator()
+            Button { app.toggleCommandPalette() } label: { Image(systemName: "magnifyingglass") }
+                .help("Search (⌘K)")
+            Button { app.toggleInspector() } label: {
+                Image(systemName: "sidebar.right")
+            }
+            .help("Toggle inspector")
+        }
+    }
+
+    private var centerModeBinding: Binding<CenterMode> {
+        Binding(get: { app.centerMode }, set: { app.setCenter($0) })
+    }
+
+    private var conflictPresented: Binding<Bool> {
+        Binding(get: { app.activeConflict != nil },
+                set: { if !$0 { app.dismissConflict() } })
+    }
+
+    // MARK: ⌘K overlay
+    @ViewBuilder private var commandPaletteOverlay: some View {
+        if app.commandPaletteVisible {
+            ZStack(alignment: .top) {
+                Color.black.opacity(0.18)
+                    .ignoresSafeArea()
+                    .onTapGesture { app.toggleCommandPalette() }
+                CommandPaletteSlot()
+                    .padding(.top, 80)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+            .zIndex(10)
+        }
+    }
+}
+
+// MARK: - Connection indicator (reads engine state)
+private struct ConnectionIndicator: View {
+    @EnvironmentObject var app: AppModel
+    var body: some View {
+        let state = app.connection
+        Group {
+            switch state {
+            case .connected:
+                StatusPill(state.label, tone: .success)
+            case .starting, .connecting:
+                StatusPill(state.label, tone: .warning, pulses: true)
+            case .error(let msg):
+                StatusPill("Error", tone: .danger).help(msg)
+            case .disconnected:
+                Button { Task { await app.engine.start() } } label: {
+                    StatusPill("Start Svod", tone: .offline, showsDot: false)
+                }
+                .buttonStyle(.plain)
+                .help("Start the Svod engine")
+            }
+        }
+        .animation(Motion.quick, value: state)
+    }
+}
+
+#Preview("RootView — connected") {
+    RootView()
+        .environmentObject(AppModel(client: MockSvodClient.preview))
+        .frame(width: 1100, height: 720)
+        .preferredColorScheme(.dark)
+}
+
+#Preview("RootView — offline") {
+    RootView()
+        .environmentObject(AppModel(client: MockSvodClient.offline))
+        .frame(width: 1100, height: 720)
+        .preferredColorScheme(.dark)
+}

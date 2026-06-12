@@ -1,0 +1,102 @@
+import Foundation
+
+// MARK: - SvodClient
+//
+// The single protocol every UI surface talks to. Frozen foundation contract —
+// feature teammates depend on this read-only and never edit it. Two conforming
+// implementations ship in the foundation: `LiveSvodClient` (URLSession HTTP +
+// WebSocket) and `MockSvodClient` (canned data, for previews + offline builds).
+//
+// All methods are async and throw `SvodClientError`. A write that loses an
+// optimistic-concurrency race throws `.conflict(ConflictBody)` so the editor /
+// history surfaces can drive a 3-way merge.
+
+public protocol SvodClient: AnyObject, Sendable {
+
+    /// Base endpoint, e.g. http://127.0.0.1:7517 — used for display and to derive ws://.
+    var baseURL: URL { get }
+
+    // lifecycle
+    func health() async throws -> Health
+    func ready() async throws -> Ready
+
+    // files
+    func tree() async throws -> TreeNode
+    func readFile(path: String) async throws -> FileContent
+    @discardableResult
+    func writeFile(path: String, content: String, expectedRevision: String?) async throws -> WriteResult
+    @discardableResult
+    func deleteFile(path: String, expectedRevision: String?) async throws -> WriteResult
+    @discardableResult
+    func moveFile(from: String, to: String, expectedRevision: String?) async throws -> MoveResult
+    @discardableResult
+    func restoreFile(trashPath: String, to: String?) async throws -> WriteResult
+
+    // history
+    func history(path: String, max: Int?) async throws -> [CommitInfo]
+    func diff(path: String, from: String, to: String) async throws -> DiffResult
+    func revision(path: String, revision: String) async throws -> FileContent
+
+    // graph / links
+    func fileLinks(path: String) async throws -> FileLinks
+    func graph() async throws -> Graph
+
+    // search
+    func search(query: String, mode: SearchMode, limit: Int?, tags: [String], pathPrefix: String?) async throws -> SearchResult
+
+    // meta
+    func tags() async throws -> Tags
+    func settings() async throws -> Settings
+    func indexStatus() async throws -> IndexStatus
+    func metrics() async throws -> Metrics
+    func conflicts() async throws -> Conflicts
+
+    /// Live event stream. The stream finishes (or throws) when the socket drops;
+    /// reconnection policy lives in the caller (EngineModel), which re-subscribes.
+    func events() -> AsyncThrowingStream<SvodEvent, Error>
+}
+
+// MARK: - Ergonomic defaults so call sites stay short
+public extension SvodClient {
+    @discardableResult
+    func writeFile(path: String, content: String) async throws -> WriteResult {
+        try await writeFile(path: path, content: content, expectedRevision: nil)
+    }
+    func history(path: String) async throws -> [CommitInfo] {
+        try await history(path: path, max: nil)
+    }
+    func search(query: String) async throws -> SearchResult {
+        try await search(query: query, mode: .hybrid, limit: nil, tags: [], pathPrefix: nil)
+    }
+}
+
+// MARK: - Errors
+public enum SvodClientError: Error, LocalizedError, Sendable {
+    case conflict(ConflictBody)
+    case notFound
+    case badRequest(String?)
+    case http(status: Int, message: String?)
+    case offline                       // could not reach the engine at all
+    case decoding(String)
+    case transport(String)
+    case invalidResponse
+
+    public var errorDescription: String? {
+        switch self {
+        case .conflict:               return "This note changed on disk; resolve the conflict to save."
+        case .notFound:               return "Not found."
+        case .badRequest(let m):      return m ?? "Bad request."
+        case .http(let s, let m):     return m ?? "Server error (\(s))."
+        case .offline:                return "The Svod engine is not reachable."
+        case .decoding(let m):        return "Couldn't read the engine's response. \(m)"
+        case .transport(let m):       return m
+        case .invalidResponse:        return "Unexpected response from the engine."
+        }
+    }
+
+    /// True when the failure means "engine is down", so UI can drop to offline state.
+    public var isOffline: Bool {
+        if case .offline = self { return true }
+        return false
+    }
+}
