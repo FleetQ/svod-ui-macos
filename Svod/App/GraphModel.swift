@@ -31,6 +31,12 @@ public final class GraphModel: ObservableObject {
         }
     }
 
+    /// Wipe current graph so the canvas animates out before a vault-switch reload.
+    public func clearGraph() {
+        graph = nil
+        errorMessage = nil
+    }
+
     /// Path the local view re-centers on (the open note). Read from AppModel.
     public var focusPath: String? { app?.selectedPath }
 
