@@ -23,6 +23,8 @@ public final class SearchModel: ObservableObject {
     /// True once a search has run for the current query; drives the "no results"
     /// empty state vs the initial idle prompt.
     @Published public var hasSearched = false
+    /// When true, use `federatedSearch` across all vaults. Default OFF (single-vault, existing behavior).
+    @Published public var allVaults: Bool = false
 
     public init(client: SvodClient) { self.client = client }
 
@@ -49,10 +51,23 @@ public final class SearchModel: ObservableObject {
         guard !q.isEmpty else { results = []; hasSearched = false; return }
         isSearching = true; errorMessage = nil
         defer { isSearching = false; hasSearched = true }
+        let limit = app?.settings.searchResultLimit ?? 20
         do {
-            let r = try await client.search(query: q, mode: mode,
-                                            limit: app?.settings.searchResultLimit ?? 20,
+            let r: SearchResult
+            if allVaults {
+                do {
+                    r = try await client.federatedSearch(query: q, mode: mode, limit: limit,
+                                                         tags: filterTags, pathPrefix: pathPrefix)
+                } catch let e as SvodClientError where e.isNotImplemented {
+                    // Engine doesn't support across=true yet — fall back to single-vault.
+                    r = try await client.search(query: q, mode: mode, limit: limit,
+                                                tags: filterTags, pathPrefix: pathPrefix)
+                    self.errorMessage = "All-vaults search is not yet available on this engine. Showing active-vault results."
+                }
+            } else {
+                r = try await client.search(query: q, mode: mode, limit: limit,
                                             tags: filterTags, pathPrefix: pathPrefix)
+            }
             self.results = r.hits
             self.selectedIndex = 0
         } catch let e as SvodClientError {
@@ -90,6 +105,7 @@ public final class SearchModel: ObservableObject {
 
     public func openSelected() {
         guard results.indices.contains(selectedIndex) else { return }
-        app?.open(path: results[selectedIndex].path)
+        let hit = results[selectedIndex]
+        app?.open(path: hit.path, vault: hit.vault)
     }
 }
