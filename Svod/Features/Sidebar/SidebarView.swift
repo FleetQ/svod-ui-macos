@@ -235,12 +235,13 @@ private struct TreeNodeRow: View {
         .accessibilityHint(isDir ? (isExpanded ? "Expanded folder. Activate to collapse." : "Collapsed folder. Activate to expand.") : "Opens this note")
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
         .contextMenu { contextMenuContent }
-        .confirmationDialog("Delete “\(node.name)”?",
-                            isPresented: $confirmingDelete, titleVisibility: .visible) {
-            Button("Delete", role: .destructive) { Task { await deleteNote() } }
+        .confirmationDialog(deleteTitle, isPresented: $confirmingDelete, titleVisibility: .visible) {
+            Button(isDir ? "Delete Folder" : "Delete", role: .destructive) {
+                Task { if isDir { await deleteFolder() } else { await deleteNote() } }
+            }
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("It’s moved to the vault’s trash and can be restored later — the engine keeps full history.")
+            Text(deleteMessage)
         }
         .alert("Couldn’t delete note", isPresented: Binding(
             get: { deleteError != nil }, set: { if !$0 { deleteError = nil } })) {
@@ -259,6 +260,12 @@ private struct TreeNodeRow: View {
                 Label(isExpanded ? "Collapse" : "Expand",
                       systemImage: isExpanded ? "chevron.down" : "chevron.right")
             }
+            if noteCount > 0 {
+                Divider()
+                Button(role: .destructive) { confirmingDelete = true } label: {
+                    Label("Delete Folder…", systemImage: "trash")
+                }
+            }
         } else {
             Button { app.open(path: node.path) } label: { Label("Open", systemImage: "doc.text") }
             Divider()
@@ -268,12 +275,27 @@ private struct TreeNodeRow: View {
         }
     }
 
+    // All note (file) paths under this node, recursively. 1 for a file.
+    private func notePaths(_ n: TreeNode) -> [String] {
+        n.type == .file ? [n.path] : (n.children ?? []).flatMap(notePaths)
+    }
+    private var noteCount: Int { notePaths(node).count }
+
+    private var deleteTitle: String {
+        if isDir {
+            return "Delete “\(node.name)” and its \(noteCount) note\(noteCount == 1 ? "" : "s")?"
+        }
+        return "Delete “\(node.name)”?"
+    }
+    private var deleteMessage: String {
+        isDir
+            ? "Every note in this folder is moved to the vault’s trash and can be restored later."
+            : "It’s moved to the vault’s trash and can be restored later — the engine keeps full history."
+    }
+
     private func deleteNote() async {
         do {
-            // The engine requires the current revision for a delete (optimistic
-            // concurrency) — fetch it first, then soft-delete to .trash/.
-            let current = try await app.client.readFile(path: node.path)
-            try await app.client.deleteFile(path: node.path, expectedRevision: current.revision)
+            try await trash(node.path)
             if app.selectedPath == node.path { app.selectedPath = nil }
             app.refreshActiveVault()   // reload the tree so the row disappears
         } catch let e as SvodClientError {
@@ -281,6 +303,31 @@ private struct TreeNodeRow: View {
         } catch {
             deleteError = error.localizedDescription
         }
+    }
+
+    /// Recursively soft-delete every note in the folder. Continues past a single
+    /// failure and surfaces the first error; the engine serializes the writes.
+    private func deleteFolder() async {
+        var firstError: String?
+        for path in notePaths(node) {
+            do {
+                try await trash(path)
+                if app.selectedPath == path { app.selectedPath = nil }
+            } catch let e as SvodClientError {
+                if firstError == nil { firstError = e.errorDescription }
+            } catch {
+                if firstError == nil { firstError = error.localizedDescription }
+            }
+        }
+        app.refreshActiveVault()
+        deleteError = firstError
+    }
+
+    /// Soft-delete one note. The engine requires the current revision (optimistic
+    /// concurrency), so read it first, then delete to .trash/.
+    private func trash(_ path: String) async throws {
+        let current = try await app.client.readFile(path: path)
+        try await app.client.deleteFile(path: path, expectedRevision: current.revision)
     }
 
     private func activate() {
