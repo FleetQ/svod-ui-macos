@@ -19,11 +19,13 @@ struct EditorView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            content
-            overlays
+        GeometryReader { geo in
+            ZStack(alignment: .topLeading) {
+                content
+                overlays(in: geo.size)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(ThemeColor.editorSurface)
         .task(id: app.selectedPath) {
             guard let path = app.selectedPath else { return }
@@ -88,22 +90,33 @@ struct EditorView: View {
         }
     }
 
-    // MARK: overlays — autocomplete popover + hover preview
-    @ViewBuilder private var overlays: some View {
+    // MARK: overlays — autocomplete popover + hover preview (clamped to the editor bounds)
+    @ViewBuilder private func overlays(in size: CGSize) -> some View {
         if autocomplete.isActive {
+            let estHeight = min(CGFloat(autocomplete.matches.count) * 30 + 16, 300)
             WikilinkPopover(model: autocomplete, resolves: { model.resolves($0) }) { name in
                 coordinator?.insertWikilink(name)
                 autocomplete.dismiss()
             }
-            .offset(x: autocomplete.anchor.minX, y: autocomplete.anchor.maxY + Spacing.xs)
+            .offset(clampedOffset(autocomplete.anchor, in: size, width: 260, height: estHeight))
             .transition(.opacity)
         }
         if preview.target != nil {
             LinkPreviewCard(model: preview)
-                .offset(x: preview.anchor.minX, y: preview.anchor.maxY + Spacing.xs)
+                .offset(clampedOffset(preview.anchor, in: size, width: 280, height: 240))
                 .allowsHitTesting(false)
                 .transition(.opacity)
         }
+    }
+
+    /// Keep a floating popover fully on-screen: clamp X to the editor width, and
+    /// flip the popover above its anchor when it would overflow the bottom edge.
+    private func clampedOffset(_ anchor: CGRect, in size: CGSize, width: CGFloat, height: CGFloat) -> CGSize {
+        let margin = Spacing.sm
+        let x = min(max(margin, anchor.minX), max(margin, size.width - width - margin))
+        let below = anchor.maxY + Spacing.xs
+        let y = (below + height > size.height) ? max(margin, anchor.minY - height - Spacing.xs) : below
+        return CGSize(width: x, height: y)
     }
 
     // MARK: frontmatter / body split + recompose (round-trip safe)

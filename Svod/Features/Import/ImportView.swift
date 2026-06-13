@@ -67,9 +67,12 @@ struct ImportView: View {
         panel.allowsMultipleSelection = false
         panel.prompt = "Import"
         panel.message = "Choose an Obsidian vault folder to import."
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        chosenName = url.lastPathComponent
-        Task { await runImport(source: url.path) }
+        // Async (begin) rather than runModal so a slow disk never freezes the window.
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            chosenName = url.lastPathComponent
+            Task { await runImport(source: url.path) }
+        }
     }
 
     private func runImport(source: String) async {

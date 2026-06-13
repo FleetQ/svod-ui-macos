@@ -80,14 +80,17 @@ struct RootView: View {
         ToolbarItem(placement: .primaryAction) {
             Button { app.toggleCommandPalette() } label: { Image(systemName: "magnifyingglass") }
                 .help("Search (⌘K)")
+                .accessibilityLabel("Search")
         }
         ToolbarItem(placement: .primaryAction) {
             Button { app.toggleInspector() } label: { Image(systemName: "sidebar.right") }
                 .help("Toggle inspector")
+                .accessibilityLabel("Toggle inspector")
         }
         ToolbarItem(placement: .primaryAction) {
             SettingsLink { Image(systemName: "gearshape") }
                 .help("Settings (⌘,)")
+                .accessibilityLabel("Settings")
         }
     }
 
