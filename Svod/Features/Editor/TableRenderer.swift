@@ -24,8 +24,10 @@ final class TableLineInfo: NSObject {
     let blockId: Int
     let blockRange: NSRange
     let isFirstLine: Bool
-    init(table: MarkdownTable, blockId: Int, blockRange: NSRange, isFirstLine: Bool) {
-        self.table = table; self.blockId = blockId; self.blockRange = blockRange; self.isFirstLine = isFirstLine
+    let gridRow: Int             // header=0, data rows 1…, separator = -1 (collapsed)
+    init(table: MarkdownTable, blockId: Int, blockRange: NSRange, isFirstLine: Bool, gridRow: Int) {
+        self.table = table; self.blockId = blockId; self.blockRange = blockRange
+        self.isFirstLine = isFirstLine; self.gridRow = gridRow
     }
 }
 
@@ -126,7 +128,6 @@ final class TableLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
     private var bodyFont: NSFont { NSFont.preferredFont(forTextStyle: .body) }
     private var headFont: NSFont { NSFont.systemFont(ofSize: bodyFont.pointSize, weight: .semibold) }
     private var rowHeight: CGFloat { ceil(bodyFont.boundingRectForFont.height) + padV * 2 }
-    private func gridHeight(_ t: MarkdownTable) -> CGFloat { CGFloat(t.rows.count) * rowHeight }
 
     override init() { super.init(); delegate = self }
     required init?(coder: NSCoder) { super.init(coder: coder); delegate = self }
@@ -184,28 +185,62 @@ final class TableLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
                        forGlyphRange glyphRange: NSRange) -> Bool {
         let ci = characterIndexForGlyph(at: glyphRange.location)
         guard let inf = info(at: ci), !isRevealed(inf) else { return false }
-        if inf.isFirstLine {
-            let h = gridHeight(inf.table)
-            rect.pointee.size.height = h
-            usedRect.pointee.size.height = h
-            return true
-        } else {
-            rect.pointee.size.height = 0
-            usedRect.pointee.size.height = 0
-            return true
-        }
+        // One grid row per source line (separator → 0). Distributing the height this
+        // way (vs one giant line fragment) is what keeps scrolling/layout correct.
+        let h: CGFloat = inf.gridRow < 0 ? 0 : rowHeight
+        rect.pointee.size.height = h
+        usedRect.pointee.size.height = h
+        return true
     }
 
-    // Draw the grid over each non-revealed block's reserved first-line rect.
+    // Draw each visible grid row at its own source-line fragment (robust to scroll —
+    // no reliance on one tall first-line fragment).
     override func drawGlyphs(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
         super.drawGlyphs(forGlyphRange: glyphsToShow, at: origin)
         guard let storage = textStorage else { return }
         let charRange = characterRange(forGlyphRange: glyphsToShow, actualGlyphRange: nil)
-        var drawn = Set<Int>()
-        storage.enumerateAttribute(.svodTableLine, in: charRange) { value, _, _ in
-            guard let inf = value as? TableLineInfo, !isRevealed(inf), !drawn.contains(inf.blockId) else { return }
-            drawn.insert(inf.blockId)
-            drawTable(inf, origin: origin)
+        var colWCache: [Int: [CGFloat]] = [:]
+        storage.enumerateAttribute(.svodTableLine, in: charRange) { value, lineRange, _ in
+            guard let inf = value as? TableLineInfo, inf.gridRow >= 0, !isRevealed(inf),
+                  inf.gridRow < inf.table.rows.count else { return }
+            let colW = colWCache[inf.blockId] ?? {
+                let w = columnWidths(inf.table); colWCache[inf.blockId] = w; return w
+            }()
+            let frag = lineFragmentRect(forGlyphAt: glyphIndexForCharacter(at: lineRange.location), effectiveRange: nil)
+            drawRow(inf.table, rowIndex: inf.gridRow, colW: colW,
+                    at: NSPoint(x: frag.minX + origin.x, y: frag.minY + origin.y))
+        }
+    }
+
+    private func drawRow(_ t: MarkdownTable, rowIndex: Int, colW: [CGFloat], at p: NSPoint) {
+        let isHeader = rowIndex == 0
+        let row = t.rows[rowIndex]
+        let bodyFont = self.bodyFont, headFont = self.headFont
+        let border = nsColor(ThemeColor.borderSubtle)
+        if isHeader {
+            nsColor(ThemeColor.surfaceRaised).setFill()
+            NSRect(x: p.x, y: p.y, width: colW.reduce(0, +), height: rowHeight).fill()
+        }
+        var x = p.x
+        for c in 0..<t.columns {
+            let w = colW[c]
+            border.setStroke(); NSBezierPath(rect: NSRect(x: x, y: p.y, width: w, height: rowHeight)).stroke()
+            let cell = c < row.count ? row[c] : MarkdownTable.Cell(display: "", target: nil)
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: isHeader ? headFont : bodyFont,
+                .foregroundColor: nsColor(isHeader ? ThemeColor.textPrimary
+                                          : (cell.target != nil ? ThemeColor.link : ThemeColor.textSecondary)),
+            ]
+            let text = cell.display as NSString
+            let sz = text.size(withAttributes: attrs)
+            var tx = x + padH
+            switch t.aligns[c] {
+            case .right:  tx = x + w - padH - sz.width
+            case .center: tx = x + (w - sz.width) / 2
+            case .left:   break
+            }
+            text.draw(at: NSPoint(x: tx, y: p.y + (rowHeight - sz.height) / 2), withAttributes: attrs)
+            x += w
         }
     }
 
@@ -242,43 +277,4 @@ final class TableLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
         return found
     }
 
-    private func drawTable(_ inf: TableLineInfo, origin: NSPoint) {
-        let firstGlyph = glyphIndexForCharacter(at: inf.blockRange.location)
-        let frag = lineFragmentRect(forGlyphAt: firstGlyph, effectiveRange: nil)
-        let t = inf.table
-        // column widths from display cells
-        let colW = columnWidths(t)
-        let border = nsColor(ThemeColor.borderSubtle)
-        let headerBg = nsColor(ThemeColor.surfaceRaised)
-        let tableW = colW.reduce(0, +)
-        var y = frag.minY + origin.y
-        let x0 = frag.minX + origin.x
-        for (ri, row) in t.rows.enumerated() {
-            let isHeader = ri == 0
-            let rowRect = NSRect(x: x0, y: y, width: tableW, height: rowHeight)
-            if isHeader { headerBg.setFill(); rowRect.fill() }
-            var x = x0
-            for c in 0..<t.columns {
-                let w = colW[c]
-                border.setStroke(); NSBezierPath(rect: NSRect(x: x, y: y, width: w, height: rowHeight)).stroke()
-                let cell = c < row.count ? row[c] : MarkdownTable.Cell(display: "", target: nil)
-                let text = cell.display as NSString
-                let attrs: [NSAttributedString.Key: Any] = [
-                    .font: isHeader ? headFont : bodyFont,
-                    .foregroundColor: nsColor(isHeader ? ThemeColor.textPrimary
-                                              : (cell.target != nil ? ThemeColor.link : ThemeColor.textSecondary)),
-                ]
-                let sz = text.size(withAttributes: attrs)
-                var tx = x + padH
-                switch t.aligns[c] {
-                case .right:  tx = x + w - padH - sz.width
-                case .center: tx = x + (w - sz.width) / 2
-                case .left:   break
-                }
-                text.draw(at: NSPoint(x: tx, y: y + (rowHeight - sz.height) / 2), withAttributes: attrs)
-                x += w
-            }
-            y += rowHeight
-        }
-    }
 }

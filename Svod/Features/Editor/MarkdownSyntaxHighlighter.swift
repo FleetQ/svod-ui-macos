@@ -156,8 +156,10 @@ struct MarkdownSyntaxHighlighter {
                 let blockRange = NSRange(location: blockLines[0].location,
                                          length: NSMaxRange(blockLines.last!) - blockLines[0].location)
                 for (k, lr) in blockLines.enumerated() {
+                    // source line k → grid row: header=0, separator(k==1)=-1, data=k-1
+                    let gridRow = k == 0 ? 0 : (k == 1 ? -1 : k - 1)
                     let info = TableLineInfo(table: table, blockId: blockRange.location,
-                                             blockRange: blockRange, isFirstLine: k == 0)
+                                             blockRange: blockRange, isFirstLine: k == 0, gridRow: gridRow)
                     s.addAttribute(.svodTableLine, value: info, range: lr)
                 }
             }
