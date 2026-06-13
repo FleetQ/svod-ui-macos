@@ -59,6 +59,16 @@ public protocol SvodClient: AnyObject, Sendable {
     /// One-shot Obsidian import into `vault` (nil ⇒ default). Idempotent.
     @discardableResult
     func importVault(source: String, into: String?, vault: String?) async throws -> ImportResult
+
+    // external sources (engine v0.6.0 — re-syncable external files/dirs)
+    func listSources(vault: String?) async throws -> [ExternalSource]
+    @discardableResult
+    func registerSource(vault: String?, path: String, into: String?, followSymlinks: Bool, prune: Bool) async throws -> ExternalSource
+    func removeSource(id: String, vault: String?) async throws
+    @discardableResult
+    func syncSource(id: String, vault: String?) async throws -> SourceSyncResult
+    @discardableResult
+    func syncAllSources(vault: String?) async throws -> [SourceSyncResult]
     /// Read a note from a SPECIFIC vault without changing the active vault — for
     /// cross-vault [[vault:note]] previews / navigation.
     func readFile(path: String, inVault vault: String) async throws -> FileContent

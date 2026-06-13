@@ -209,6 +209,39 @@ public final class MockSvodClient: SvodClient, @unchecked Sendable {
             skipped: [base + "Projects/secret.env"])   // present-but-differing or secret-blocked
     }
 
+    // external sources — a tiny in-memory registry for previews
+    private static var mockSources: [ExternalSource] = [
+        .init(id: "src-docs", path: "/Users/you/htdocs/boruna-ide/docs", into: "boruna/docs",
+              followSymlinks: false, prune: false, lastSyncedAt: "2026-06-13T17:20:00Z"),
+    ]
+    public func listSources(vault: String?) async throws -> [ExternalSource] {
+        try await gate(); return Self.mockSources
+    }
+    @discardableResult
+    public func registerSource(vault: String?, path: String, into: String?, followSymlinks: Bool, prune: Bool) async throws -> ExternalSource {
+        try await gate()
+        let s = ExternalSource(id: "src-\(abs(path.hashValue) % 100000)", path: path,
+                               into: into ?? (path as NSString).lastPathComponent,
+                               followSymlinks: followSymlinks, prune: prune, lastSyncedAt: nil)
+        Self.mockSources.append(s); return s
+    }
+    public func removeSource(id: String, vault: String?) async throws {
+        try await gate(); Self.mockSources.removeAll { $0.id == id }
+    }
+    @discardableResult
+    public func syncSource(id: String, vault: String?) async throws -> SourceSyncResult {
+        try await gate()
+        return SourceSyncResult(id: id, created: ["boruna/docs/setup.md"], updated: ["boruna/docs/api.md"],
+                                unchanged: ["boruna/docs/intro.md"], conflicts: [], orphaned: [], deleted: [], skipped: [])
+    }
+    @discardableResult
+    public func syncAllSources(vault: String?) async throws -> [SourceSyncResult] {
+        try await gate()
+        var out: [SourceSyncResult] = []
+        for s in Self.mockSources { out.append(try await syncSource(id: s.id, vault: vault)) }
+        return out
+    }
+
     @discardableResult
     public func resolveConflict(path: String, content: String, expectedRevision: String?) async throws -> WriteResult {
         try await gate()

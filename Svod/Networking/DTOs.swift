@@ -403,3 +403,67 @@ public struct ImportResult: Codable, Hashable, Sendable {
     }
     public var total: Int { imported.count + unchanged.count + skipped.count }
 }
+
+// MARK: - External sources (engine v0.6.0 — re-syncable external files/dirs)
+
+/// A registered external source: a file/dir outside the vault that can be re-synced
+/// in (external-wins-unless-locally-edited). `id` is derived from `path`.
+public struct ExternalSource: Codable, Hashable, Sendable, Identifiable {
+    public var id: String
+    public var path: String
+    public var into: String
+    public var followSymlinks: Bool
+    public var prune: Bool
+    public var lastSyncedAt: String?     // ISO-8601, nil if never synced
+    public init(id: String, path: String, into: String, followSymlinks: Bool, prune: Bool, lastSyncedAt: String? = nil) {
+        self.id = id; self.path = path; self.into = into
+        self.followSymlinks = followSymlinks; self.prune = prune; self.lastSyncedAt = lastSyncedAt
+    }
+    /// Display name = last path component.
+    public var name: String { (path as NSString).lastPathComponent }
+}
+
+public struct RegisterSourceRequest: Codable, Hashable, Sendable {
+    public var path: String                 // absolute path to a file/dir outside the vault
+    public var into: String?                // vault subpath prefix
+    public var followSymlinks: Bool
+    public var prune: Bool                   // propagate deletions (off by default)
+    public init(path: String, into: String? = nil, followSymlinks: Bool = false, prune: Bool = false) {
+        self.path = path; self.into = into; self.followSymlinks = followSymlinks; self.prune = prune
+    }
+}
+
+/// Per-source sync outcome. Arrays may be omitted on the wire → default to empty.
+public struct SourceSyncResult: Codable, Hashable, Sendable, Identifiable {
+    public var id: String
+    public var created: [String]
+    public var updated: [String]
+    public var unchanged: [String]
+    public var conflicts: [String]          // vault copy locally edited → left as-is
+    public var orphaned: [String]           // gone from source → left in vault
+    public var deleted: [String]            // gone from source AND pruned (soft-deleted)
+    public var skipped: [String]            // secret-scanner blocked
+    public var error: String?               // source path unreadable (sync was a no-op)
+
+    public init(id: String, created: [String] = [], updated: [String] = [], unchanged: [String] = [],
+                conflicts: [String] = [], orphaned: [String] = [], deleted: [String] = [],
+                skipped: [String] = [], error: String? = nil) {
+        self.id = id; self.created = created; self.updated = updated; self.unchanged = unchanged
+        self.conflicts = conflicts; self.orphaned = orphaned; self.deleted = deleted
+        self.skipped = skipped; self.error = error
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        created = try c.decodeIfPresent([String].self, forKey: .created) ?? []
+        updated = try c.decodeIfPresent([String].self, forKey: .updated) ?? []
+        unchanged = try c.decodeIfPresent([String].self, forKey: .unchanged) ?? []
+        conflicts = try c.decodeIfPresent([String].self, forKey: .conflicts) ?? []
+        orphaned = try c.decodeIfPresent([String].self, forKey: .orphaned) ?? []
+        deleted = try c.decodeIfPresent([String].self, forKey: .deleted) ?? []
+        skipped = try c.decodeIfPresent([String].self, forKey: .skipped) ?? []
+        error = try c.decodeIfPresent(String.self, forKey: .error)
+    }
+    /// New + updated — the "pulled in" count for a concise summary.
+    public var changed: Int { created.count + updated.count }
+}

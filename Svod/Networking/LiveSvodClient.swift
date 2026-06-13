@@ -145,6 +145,33 @@ public final class LiveSvodClient: SvodClient, @unchecked Sendable {
                        body: ImportRequest(source: source, into: into, vault: vault))
     }
 
+    // MARK: external sources (per-vault)
+    public func listSources(vault: String?) async throws -> [ExternalSource] {
+        try await get("/api/v1/sources", query: vaulted())
+    }
+
+    @discardableResult
+    public func registerSource(vault: String?, path: String, into: String?, followSymlinks: Bool, prune: Bool) async throws -> ExternalSource {
+        try await send("/api/v1/sources", method: "POST", query: vaulted(),
+                       body: RegisterSourceRequest(path: path, into: into, followSymlinks: followSymlinks, prune: prune))
+    }
+
+    public func removeSource(id: String, vault: String?) async throws {
+        let enc = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
+        try await sendNoResult("/api/v1/sources/\(enc)", method: "DELETE", query: vaulted())
+    }
+
+    @discardableResult
+    public func syncSource(id: String, vault: String?) async throws -> SourceSyncResult {
+        let enc = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
+        return try await sendNoBody("/api/v1/sources/\(enc)/sync", method: "POST", query: vaulted())
+    }
+
+    @discardableResult
+    public func syncAllSources(vault: String?) async throws -> [SourceSyncResult] {
+        try await sendNoBody("/api/v1/sources/sync", method: "POST", query: vaulted())
+    }
+
     // MARK: meta
     public func tags() async throws -> Tags { try await get("/api/v1/tags", query: vaulted()) }
     public func settings() async throws -> Settings { try await get("/api/v1/settings", query: vaulted()) }
@@ -251,6 +278,28 @@ public final class LiveSvodClient: SvodClient, @unchecked Sendable {
         var req = URLRequest(url: makeURL(path, query: query))
         req.httpMethod = method
         return try await perform(req)
+    }
+
+    /// Perform a request whose success response carries no body (e.g. 204).
+    private func sendNoResult(_ path: String, method: String, query: [URLQueryItem] = []) async throws {
+        var req = URLRequest(url: makeURL(path, query: query))
+        req.httpMethod = method
+        let data: Data, response: URLResponse
+        do { (data, response) = try await session.data(for: req) }
+        catch let e as URLError {
+            switch e.code {
+            case .cannotConnectToHost, .cannotFindHost, .networkConnectionLost,
+                 .notConnectedToInternet, .timedOut: throw SvodClientError.offline
+            default: throw SvodClientError.transport(e.localizedDescription)
+            }
+        }
+        guard let http = response as? HTTPURLResponse else { throw SvodClientError.invalidResponse }
+        switch http.statusCode {
+        case 200...299: return
+        case 404: throw SvodClientError.notFound
+        case 501: throw SvodClientError.notImplemented(Self.message(from: data, decoder: decoder))
+        default: throw SvodClientError.http(status: http.statusCode, message: Self.message(from: data, decoder: decoder))
+        }
     }
 
     private func perform<T: Decodable>(_ request: URLRequest) async throws -> T {
