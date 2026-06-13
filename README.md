@@ -1,11 +1,10 @@
 # Svod UI (macOS)
 
-A **personal** native macOS client (SwiftUI) for the [Svod engine](https://github.com/FleetQ/svod-engine) — a calm, dark-first reader/editor for a git-backed, multi-vault, multi-agent knowledge base you can read, diff, and restore.
+A native macOS client (SwiftUI) for the [Svod engine](https://github.com/FleetQ/svod-engine) — a calm, dark-first reader/editor for a git-backed, multi-vault, multi-agent knowledge base you can read, diff, and restore.
 
-> ⚠️ **Not a supported product surface.** This is a personal tool, kept in its own repo and
-> explicitly **out of the Svod product's scope** — no cross-OS support, no marketing, no
-> stability guarantees. The product is the engine; see
-> [ADR-0002](https://github.com/FleetQ/svod-engine/blob/main/docs/adr/0002-repo-split-and-license.md).
+The client lives in its own repo and is released independently of the engine; the two are
+decoupled by a versioned OpenAPI contract (see
+[ADR-0002](https://github.com/FleetQ/svod-engine/blob/main/docs/adr/0002-repo-split-and-license.md)).
 
 ## What it is
 
