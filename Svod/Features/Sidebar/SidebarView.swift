@@ -170,6 +170,8 @@ private struct TreeNodeRow: View {
     let app: AppModel
 
     @FocusState private var focused: Bool
+    @State private var confirmingDelete = false
+    @State private var deleteError: String?
 
     private var isDir: Bool { node.type == .dir }
     private var isExpanded: Bool { model.expanded.contains(node.path) }
@@ -232,6 +234,53 @@ private struct TreeNodeRow: View {
         .accessibilityLabel(accessibilityLabel)
         .accessibilityHint(isDir ? (isExpanded ? "Expanded folder. Activate to collapse." : "Collapsed folder. Activate to expand.") : "Opens this note")
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+        .contextMenu { contextMenuContent }
+        .confirmationDialog("Delete “\(node.name)”?",
+                            isPresented: $confirmingDelete, titleVisibility: .visible) {
+            Button("Delete", role: .destructive) { Task { await deleteNote() } }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("It’s moved to the vault’s trash and can be restored later — the engine keeps full history.")
+        }
+        .alert("Couldn’t delete note", isPresented: Binding(
+            get: { deleteError != nil }, set: { if !$0 { deleteError = nil } })) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(deleteError ?? "")
+        }
+    }
+
+    // Right-click menu: folders expand/collapse; notes open or delete (with confirm).
+    @ViewBuilder private var contextMenuContent: some View {
+        if isDir {
+            Button {
+                withAnimation(Motion.quick) { model.toggle(node.path) }
+            } label: {
+                Label(isExpanded ? "Collapse" : "Expand",
+                      systemImage: isExpanded ? "chevron.down" : "chevron.right")
+            }
+        } else {
+            Button { app.open(path: node.path) } label: { Label("Open", systemImage: "doc.text") }
+            Divider()
+            Button(role: .destructive) { confirmingDelete = true } label: {
+                Label("Delete Note…", systemImage: "trash")
+            }
+        }
+    }
+
+    private func deleteNote() async {
+        do {
+            // The engine requires the current revision for a delete (optimistic
+            // concurrency) — fetch it first, then soft-delete to .trash/.
+            let current = try await app.client.readFile(path: node.path)
+            try await app.client.deleteFile(path: node.path, expectedRevision: current.revision)
+            if app.selectedPath == node.path { app.selectedPath = nil }
+            app.refreshActiveVault()   // reload the tree so the row disappears
+        } catch let e as SvodClientError {
+            deleteError = e.errorDescription
+        } catch {
+            deleteError = error.localizedDescription
+        }
     }
 
     private func activate() {
