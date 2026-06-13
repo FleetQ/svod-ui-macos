@@ -268,11 +268,17 @@ struct MarkdownTextView: NSViewRepresentable {
         // MARK: link click — open same-vault or cross-vault wikilink
         func textView(_ view: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
             guard let value = link as? String else { return false }
+            return openLink(value)
+        }
+
+        /// Open a wikilink (svodwiki://) or a standard URL. Shared by text-link clicks
+        /// and rendered-table-cell clicks.
+        @discardableResult
+        func openLink(_ value: String) -> Bool {
             if value.hasPrefix("svodwiki://") {
                 parent.onOpenLink(String(value.dropFirst("svodwiki://".count)))
                 return true
             }
-            // Standard markdown link → open externally.
             if (value.hasPrefix("http://") || value.hasPrefix("https://")), let url = URL(string: value) {
                 NSWorkspace.shared.open(url)
                 return true
@@ -338,5 +344,18 @@ final class HoverTextView: NSTextView {
     override func keyDown(with event: NSEvent) {
         if coordinator?.handleKey(event) == true { return }
         super.keyDown(with: event)
+    }
+
+    // Click a link inside a rendered table grid → open it (don't place the caret /
+    // reveal the table). Other clicks fall through to normal selection.
+    override func mouseDown(with event: NSEvent) {
+        if let lm = layoutManager as? TableLayoutManager {
+            let p = convert(event.locationInWindow, from: nil)
+            let cp = NSPoint(x: p.x - textContainerOrigin.x, y: p.y - textContainerOrigin.y)
+            if let target = lm.link(atContainerPoint: cp), coordinator?.openLink(target) == true {
+                return
+            }
+        }
+        super.mouseDown(with: event)
     }
 }

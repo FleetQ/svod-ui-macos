@@ -33,9 +33,10 @@ final class TableLineInfo: NSObject {
 
 struct MarkdownTable {
     enum Align { case left, right, center }
+    struct Cell { var display: String; var target: String? }   // target: "svodwiki://…" or "http(s)…"
     var columns: Int
     var aligns: [Align]
-    var rows: [[String]]          // row 0 = header; separator dropped; cells are display strings
+    var rows: [[Cell]]            // row 0 = header; separator dropped
 
     static func parse(_ lines: [String]) -> MarkdownTable? {
         guard lines.count >= 2 else { return nil }
@@ -43,17 +44,17 @@ struct MarkdownTable {
         guard sep.contains("-"), sep.replacingOccurrences(of: "|", with: "")
             .replacingOccurrences(of: "-", with: "").replacingOccurrences(of: ":", with: "")
             .trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
-        func cells(_ line: String) -> [String] {
-            var s = line.trimmingCharacters(in: .whitespaces)
-            if s.hasPrefix("|") { s.removeFirst() }
-            if s.hasSuffix("|") { s.removeLast() }
-            return s.components(separatedBy: "|").map { display($0.trimmingCharacters(in: .whitespaces)) }
-        }
-        let aligns: [Align] = sep.split(separator: "|", omittingEmptySubsequences: true).map {
+        let aligns: [Align] = splitPipes(sep).map {
             let t = $0.trimmingCharacters(in: .whitespaces)
             if t.hasPrefix(":"), t.hasSuffix(":") { return .center }
             if t.hasSuffix(":") { return .right }
             return .left
+        }
+        func cells(_ line: String) -> [Cell] {
+            splitPipes(line).map { raw in
+                let t = raw.trimmingCharacters(in: .whitespaces)
+                return Cell(display: display(t), target: target(t))
+            }
         }
         var rows = [cells(lines[0])]
         for line in lines.dropFirst(2) where line.contains("|") { rows.append(cells(line)) }
@@ -63,13 +64,54 @@ struct MarkdownTable {
                              rows: rows)
     }
 
-    /// `[[target|alias]]`→alias, `[[note]]`→note, `[text](url)`→text.
+    /// Split a table row on `|`, ignoring pipes inside `[[ ]]` (wikilink aliases),
+    /// inline code, and `\|` escapes. Trims the outer leading/trailing `|`.
+    static func splitPipes(_ line: String) -> [String] {
+        var s = line.trimmingCharacters(in: .whitespaces)
+        if s.hasPrefix("|") { s.removeFirst() }
+        if s.hasSuffix("|") { s.removeLast() }
+        var out: [String] = []
+        var cur = ""
+        var wiki = false, code = false
+        let chars = Array(s)
+        var i = 0
+        while i < chars.count {
+            let c = chars[i]
+            if c == "\\", i + 1 < chars.count { cur.append(c); cur.append(chars[i + 1]); i += 2; continue }
+            if !code, c == "[", i + 1 < chars.count, chars[i + 1] == "[" { wiki = true; cur += "[["; i += 2; continue }
+            if !code, c == "]", i + 1 < chars.count, chars[i + 1] == "]" { wiki = false; cur += "]]"; i += 2; continue }
+            if c == "`" { code.toggle(); cur.append(c); i += 1; continue }
+            if c == "|", !wiki, !code { out.append(cur); cur = ""; i += 1; continue }
+            cur.append(c); i += 1
+        }
+        out.append(cur)
+        return out
+    }
+
+    /// `[[target|alias]]`→alias, `[[note]]`→note, `[text](url)`→text. Plain otherwise.
     private static func display(_ raw: String) -> String {
         var s = raw
         s = s.replacingOccurrences(of: #"\[\[([^\]]+)\]\]"#, with: "$1", options: .regularExpression)
-        s = s.replacingOccurrences(of: #"^[^|]*\|"#, with: "", options: .regularExpression)      // alias
+        s = s.replacingOccurrences(of: #"^[^|]*\|"#, with: "", options: .regularExpression)     // alias
         s = s.replacingOccurrences(of: #"\[([^\]]+)\]\([^)]+\)"#, with: "$1", options: .regularExpression)
         return s.trimmingCharacters(in: .whitespaces)
+    }
+
+    /// The click target of a cell: a wikilink → "svodwiki://<target>", a markdown
+    /// link → its URL, else nil.
+    private static func target(_ raw: String) -> String? {
+        if let inner = firstGroup(#"\[\[([^\]]+)\]\]"#, raw) {
+            let tgt = inner.split(separator: "|").first.map(String.init) ?? inner
+            return "svodwiki://" + tgt.trimmingCharacters(in: .whitespaces)
+        }
+        if let url = firstGroup(#"\[[^\]]+\]\(([^)]+)\)"#, raw) { return url }
+        return nil
+    }
+    private static func firstGroup(_ pattern: String, _ s: String) -> String? {
+        guard let re = try? NSRegularExpression(pattern: pattern),
+              let m = re.firstMatch(in: s, range: NSRange(s.startIndex..., in: s)),
+              m.numberOfRanges > 1, let r = Range(m.range(at: 1), in: s) else { return nil }
+        return String(s[r])
     }
 }
 
@@ -167,18 +209,45 @@ final class TableLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
         }
     }
 
+    private func columnWidths(_ t: MarkdownTable) -> [CGFloat] {
+        var colW = [CGFloat](repeating: 0, count: t.columns)
+        for (ri, row) in t.rows.enumerated() {
+            let f = ri == 0 ? headFont : bodyFont
+            for c in 0..<t.columns where c < row.count {
+                colW[c] = max(colW[c], (row[c].display as NSString).size(withAttributes: [.font: f]).width + padH * 2)
+            }
+        }
+        return colW
+    }
+
+    /// If `p` (in text-container coordinates) lands on a rendered grid cell that has a
+    /// link, return its target ("svodwiki://…" or a URL). Used for click handling.
+    func link(atContainerPoint p: NSPoint) -> String? {
+        guard let storage = textStorage else { return nil }
+        var found: String?
+        storage.enumerateAttribute(.svodTableLine, in: NSRange(location: 0, length: storage.length)) { v, _, stop in
+            guard let inf = v as? TableLineInfo, inf.isFirstLine, !isRevealed(inf) else { return }
+            let frag = lineFragmentRect(forGlyphAt: glyphIndexForCharacter(at: inf.blockRange.location), effectiveRange: nil)
+            let t = inf.table
+            let colW = columnWidths(t)
+            let gridRect = NSRect(x: frag.minX, y: frag.minY, width: colW.reduce(0, +), height: rowHeight * CGFloat(t.rows.count))
+            guard gridRect.contains(p) else { return }
+            let rowIdx = min(t.rows.count - 1, max(0, Int((p.y - frag.minY) / rowHeight)))
+            var x = frag.minX, colIdx = 0
+            for (c, w) in colW.enumerated() { colIdx = c; if p.x < x + w { break }; x += w }
+            let row = t.rows[rowIdx]
+            if colIdx < row.count { found = row[colIdx].target }
+            stop.pointee = true
+        }
+        return found
+    }
+
     private func drawTable(_ inf: TableLineInfo, origin: NSPoint) {
         let firstGlyph = glyphIndexForCharacter(at: inf.blockRange.location)
         let frag = lineFragmentRect(forGlyphAt: firstGlyph, effectiveRange: nil)
         let t = inf.table
         // column widths from display cells
-        var colW = [CGFloat](repeating: 0, count: t.columns)
-        for (ri, row) in t.rows.enumerated() {
-            let f = ri == 0 ? headFont : bodyFont
-            for c in 0..<t.columns where c < row.count {
-                colW[c] = max(colW[c], (row[c] as NSString).size(withAttributes: [.font: f]).width + padH * 2)
-            }
-        }
+        let colW = columnWidths(t)
         let border = nsColor(ThemeColor.borderSubtle)
         let headerBg = nsColor(ThemeColor.surfaceRaised)
         let tableW = colW.reduce(0, +)
@@ -192,10 +261,12 @@ final class TableLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
             for c in 0..<t.columns {
                 let w = colW[c]
                 border.setStroke(); NSBezierPath(rect: NSRect(x: x, y: y, width: w, height: rowHeight)).stroke()
-                let text = (c < row.count ? row[c] : "") as NSString
+                let cell = c < row.count ? row[c] : MarkdownTable.Cell(display: "", target: nil)
+                let text = cell.display as NSString
                 let attrs: [NSAttributedString.Key: Any] = [
                     .font: isHeader ? headFont : bodyFont,
-                    .foregroundColor: nsColor(isHeader ? ThemeColor.textPrimary : ThemeColor.textSecondary),
+                    .foregroundColor: nsColor(isHeader ? ThemeColor.textPrimary
+                                              : (cell.target != nil ? ThemeColor.link : ThemeColor.textSecondary)),
                 ]
                 let sz = text.size(withAttributes: attrs)
                 var tx = x + padH
