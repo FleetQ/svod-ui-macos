@@ -39,6 +39,9 @@ public final class AppModel: ObservableObject {
     @Published public var inspectorVisible = true
     @Published public var commandPaletteVisible = false
     @Published public var centerMode: CenterMode = .editor
+    /// Import sheet presented from RootView (not from the toolbar menu — a `.sheet`
+    /// inside a Menu never presents). Set true from the vault switcher / sidebar.
+    @Published public var importPresented = false
 
     // Feature sub-models (one per teammate)
     public let editor: EditorModel
@@ -164,4 +167,8 @@ public final class AppModel: ObservableObject {
 
     /// Reload vault-scoped state after a reconnect (e.g. engine restarted).
     public func reloadVaults() { Task { await vault.load() } }
+
+    /// Refresh vault-scoped panes (tree, graph) without switching vaults — e.g.
+    /// after an import added files to the active vault.
+    public func refreshActiveVault() { reloadEpoch &+= 1 }
 }

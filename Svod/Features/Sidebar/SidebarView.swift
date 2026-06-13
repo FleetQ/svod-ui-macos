@@ -147,11 +147,10 @@ struct SidebarView: View {
 
 private struct SidebarImportButton: View {
     @EnvironmentObject var app: AppModel
-    @State private var showImport = false
 
     var body: some View {
         Button {
-            showImport = true
+            app.importPresented = true
         } label: {
             Image(systemName: "folder.badge.plus")
                 .imageScale(.small)
@@ -160,10 +159,6 @@ private struct SidebarImportButton: View {
         .buttonStyle(.plain)
         .help("Import Obsidian Vault…")
         .accessibilityLabel("Import Obsidian Vault")
-        .sheet(isPresented: $showImport) {
-            ImportView()
-                .environmentObject(app)
-        }
     }
 }
 

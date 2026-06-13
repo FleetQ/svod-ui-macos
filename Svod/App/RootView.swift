@@ -33,6 +33,9 @@ struct RootView: View {
         .sheet(isPresented: conflictPresented) {
             if let c = app.activeConflict { ConflictSlot(conflict: c) }
         }
+        .sheet(isPresented: $app.importPresented) {
+            ImportView().environmentObject(app)
+        }
         .onChange(of: columnVisibility) { _, new in
             app.sidebarVisible = (new != .detailOnly)
         }

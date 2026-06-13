@@ -9,6 +9,7 @@ import SwiftUI
 
 struct VaultSwitcherView: View {
     @ObservedObject var model: VaultModel
+    @EnvironmentObject var app: AppModel
 
     var body: some View {
         if model.hasMultipleVaults {
@@ -72,27 +73,13 @@ struct VaultSwitcherView: View {
         }
     }
 
-    // "Import Obsidian Vault…" in the menu — surfaces ImportView without touching frozen files
+    // "Import Obsidian Vault…" — a `.sheet` inside a Menu never presents, so this
+    // only flips an AppModel flag; RootView owns the actual sheet.
     private var importMenuItem: some View {
-        ImportMenuButton()
-    }
-}
-
-// MARK: - ImportMenuButton — presents ImportView as a sheet
-
-private struct ImportMenuButton: View {
-    @EnvironmentObject var app: AppModel
-    @State private var showImport = false
-
-    var body: some View {
         Button {
-            showImport = true
+            app.importPresented = true
         } label: {
             Label("Import Obsidian Vault…", systemImage: "folder.badge.plus")
-        }
-        .sheet(isPresented: $showImport) {
-            ImportView()
-                .environmentObject(app)
         }
     }
 }

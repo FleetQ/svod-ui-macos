@@ -9,26 +9,37 @@ import AppKit
 
 struct ImportView: View {
     @EnvironmentObject var app: AppModel
+    @Environment(\.dismiss) private var dismiss
     @State private var result: ImportResult?
     @State private var busy = false
     @State private var error: String?
+    @State private var chosenName: String?
+
+    private var targetVaultName: String { app.vault.activeVault?.name ?? "the default vault" }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
-            Text("Import Obsidian Vault")
-                .font(Typography.headline)
-            Text("Markdown + attachments are imported through the engine. Re-running is idempotent; differing files are skipped, never clobbered.")
+            HStack {
+                Text("Import Obsidian Vault").font(Typography.headline)
+                Spacer()
+                Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
+            }
+            Text("Markdown + attachments are imported into **\(targetVaultName)** through the engine. Re-running is idempotent; differing files are skipped, never clobbered.")
                 .font(Typography.callout)
                 .foregroundStyle(ThemeColor.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
 
-            Button {
-                pickAndImport()
-            } label: {
-                Label("Choose folder…", systemImage: "folder.badge.plus")
+            HStack(spacing: Spacing.sm) {
+                Button {
+                    pickAndImport()
+                } label: {
+                    Label(chosenName == nil ? "Choose folder…" : "Choose another folder…", systemImage: "folder.badge.plus")
+                }
+                .disabled(busy)
+                if let chosenName { Text(chosenName).font(Typography.caption).foregroundStyle(ThemeColor.textTertiary) }
+                if busy { ProgressView().controlSize(.small) }
             }
-            .disabled(busy)
 
-            if busy { ProgressView().controlSize(.small) }
             if let r = result {
                 VStack(alignment: .leading, spacing: Spacing.xxs) {
                     Label("\(r.imported.count) imported", systemImage: "plus.circle").foregroundStyle(ThemeColor.sync)
@@ -36,13 +47,17 @@ struct ImportView: View {
                     Label("\(r.skipped.count) skipped", systemImage: "exclamationmark.triangle").foregroundStyle(ThemeColor.conflict)
                 }
                 .font(Typography.callout)
+                .padding(.top, Spacing.xxs)
             }
             if let error {
                 Text(error).font(Typography.caption).foregroundStyle(ThemeColor.danger)
             }
         }
-        .padding(Spacing.md)
-        .frame(minWidth: 360)
+        .padding(Spacing.lg)
+        .frame(minWidth: 420)
+        .background(
+            Button("") { dismiss() }.keyboardShortcut(.cancelAction).hidden()
+        )
     }
 
     private func pickAndImport() {
@@ -51,7 +66,9 @@ struct ImportView: View {
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
         panel.prompt = "Import"
+        panel.message = "Choose an Obsidian vault folder to import."
         guard panel.runModal() == .OK, let url = panel.url else { return }
+        chosenName = url.lastPathComponent
         Task { await runImport(source: url.path) }
     }
 
@@ -60,7 +77,7 @@ struct ImportView: View {
         defer { busy = false }
         do {
             result = try await app.client.importVault(source: source, into: nil, vault: app.vault.activeVaultId)
-            app.reloadVaults()
+            app.refreshActiveVault()   // show the new files in the tree
         } catch let e as SvodClientError {
             error = e.errorDescription
         } catch {
