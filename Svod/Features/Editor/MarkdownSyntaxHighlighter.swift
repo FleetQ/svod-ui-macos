@@ -136,11 +136,32 @@ struct MarkdownSyntaxHighlighter {
                     s.addAttribute(.font, value: headerFont, range: lines[i - 1])
                 }
             } else {
-                // dim the column separators so cell content stands out
                 ns.enumerateSubstrings(in: r, options: .byComposedCharacterSequences) { sub, sr, _, _ in
                     if sub == "|" { s.addAttribute(.foregroundColor, value: cFaint, range: sr) }
                 }
             }
+        }
+
+        // Group consecutive table rows into blocks and tag each line with the parsed
+        // table, so TableLayoutManager can render an aligned grid (raw text hidden,
+        // revealed only when the caret is inside).
+        var i = 0
+        while i < lines.count {
+            guard isRow(body(lines[i])) else { i += 1; continue }
+            var j = i
+            while j < lines.count, isRow(body(lines[j])) { j += 1 }
+            let blockLines = Array(lines[i..<j])
+            if blockLines.count >= 2,
+               let table = MarkdownTable.parse(blockLines.map { ns.substring(with: $0) }) {
+                let blockRange = NSRange(location: blockLines[0].location,
+                                         length: NSMaxRange(blockLines.last!) - blockLines[0].location)
+                for (k, lr) in blockLines.enumerated() {
+                    let info = TableLineInfo(table: table, blockId: blockRange.location,
+                                             blockRange: blockRange, isFirstLine: k == 0)
+                    s.addAttribute(.svodTableLine, value: info, range: lr)
+                }
+            }
+            i = j
         }
     }
 

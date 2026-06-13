@@ -28,7 +28,13 @@ struct MarkdownTextView: NSViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
     func makeNSView(context: Context) -> NSScrollView {
-        let tv = HoverTextView()
+        // Manual text system so we can install the table-rendering layout manager.
+        let storage = NSTextStorage()
+        let layout = TableLayoutManager()
+        storage.addLayoutManager(layout)
+        let container = NSTextContainer(size: NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
+        layout.addTextContainer(container)
+        let tv = HoverTextView(frame: .zero, textContainer: container)
         tv.onMouseMoved = { [weak coordinator = context.coordinator] in coordinator?.hoverLinkProbe() }
         tv.onMouseExited = { [weak coordinator = context.coordinator] in coordinator?.parent.onHoverLink(nil, nil, .zero) }
         let scroll = NSScrollView()
@@ -117,6 +123,7 @@ struct MarkdownTextView: NSViewRepresentable {
             storage.addAttribute(.paragraphStyle, value: ps,
                                  range: NSRange(location: 0, length: storage.length))
             applyFocusDimming()
+            updateTableReveal()
         }
 
         func textDidChange(_ notification: Notification) {
@@ -129,6 +136,20 @@ struct MarkdownTextView: NSViewRepresentable {
         func textViewDidChangeSelection(_ notification: Notification) {
             applyFocusDimming()
             updateAutocomplete()
+            updateTableReveal()
+        }
+
+        /// Reveal (as raw editable text) the table block the caret is in; render all
+        /// other tables as grids. Source is never modified.
+        func updateTableReveal() {
+            guard let tv = textView,
+                  let lm = tv.layoutManager as? TableLayoutManager,
+                  let storage = tv.textStorage, storage.length > 0 else { return }
+            let caret = tv.selectedRange().location
+            let idx = min(max(0, caret), storage.length - 1)
+            let block = (storage.attribute(.svodTableLine, at: idx, effectiveRange: nil) as? TableLineInfo)?.blockRange
+            lm.setRevealed(block)
+            tv.needsDisplay = true
         }
 
         // MARK: focus / typewriter dimming
