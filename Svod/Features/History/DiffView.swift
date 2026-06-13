@@ -12,6 +12,9 @@ struct DiffView: View {
     let isFirstCommit: Bool
     @AppStorage("history.diffLayout") private var sideBySide = true
 
+    /// Minimum width for two readable columns; below this we use unified.
+    static let minSideBySideWidth: CGFloat = 680
+
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -19,10 +22,17 @@ struct DiffView: View {
             if parsed.isEmpty {
                 EmptyStateView(icon: "equal", title: "No textual change",
                                message: "This commit didn't change the text of this note.")
-            } else if sideBySide {
-                SideBySideDiff(rows: parsed.rows)
             } else {
-                UnifiedDiff(lines: parsed.lines)
+                // Responsive: side-by-side needs room for two readable columns;
+                // below that we fall back to the single-column unified view so the
+                // diff stays usable on small windows (sidebars open, laptops).
+                GeometryReader { geo in
+                    if sideBySide && geo.size.width >= Self.minSideBySideWidth {
+                        SideBySideDiff(rows: parsed.rows, available: geo.size.width)
+                    } else {
+                        UnifiedDiff(lines: parsed.lines)
+                    }
+                }
             }
         }
         .background(ThemeColor.editorSurface)
@@ -64,21 +74,28 @@ struct DiffView: View {
 
 private struct SideBySideDiff: View {
     let rows: [SideBySideRow]
+    /// Width of the diff area; columns flex to fill it (no fixed widths, so the
+    /// content never overflows the viewport — long lines wrap instead).
+    let available: CGFloat
 
     var body: some View {
-        ScrollView([.vertical, .horizontal]) {
+        // Each column gets half the area (minus the 1pt divider). Vertical scroll
+        // only — horizontal overflow is gone because cells wrap to their column.
+        let colWidth = max(120, (available - 1) / 2)
+        ScrollView(.vertical) {
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(rows) { row in
                     if isSpanning(row) {
                         // meta/hunk header spans the full width
                         DiffCell(line: row.left, side: .new, showOldNumber: false, spanning: true)
+                            .frame(width: available, alignment: .leading)
                     } else {
-                        HStack(spacing: 0) {
+                        HStack(alignment: .top, spacing: 0) {
                             DiffCell(line: row.left, side: .old, showOldNumber: true, spanning: false)
-                                .frame(width: 380, alignment: .leading)
+                                .frame(width: colWidth, alignment: .leading)
                             Rectangle().fill(ThemeColor.separator).frame(width: 1)
                             DiffCell(line: row.right, side: .new, showOldNumber: false, spanning: false)
-                                .frame(width: 380, alignment: .leading)
+                                .frame(width: colWidth, alignment: .leading)
                         }
                     }
                 }
@@ -118,8 +135,7 @@ private struct DiffCell: View {
                     .font(Typography.code)
                     .foregroundStyle(line.kind == .meta ? ThemeColor.diffMeta : line.color)
                     .textSelection(.enabled)
-                    .fixedSize(horizontal: true, vertical: false)
-                Spacer(minLength: 0)
+                    .frame(maxWidth: .infinity, alignment: .leading)   // wrap within the column
             }
             .padding(.horizontal, Spacing.sm)
             .padding(.vertical, 1)
@@ -153,10 +169,10 @@ private struct UnifiedDiff: View {
     let lines: [DiffLine]
 
     var body: some View {
-        ScrollView([.vertical, .horizontal]) {
+        ScrollView(.vertical) {
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(lines) { line in
-                    HStack(spacing: Spacing.sm) {
+                    HStack(alignment: .top, spacing: Spacing.sm) {
                         Text(line.oldNumber.map(String.init) ?? "")
                             .frame(width: 32, alignment: .trailing)
                         Text(line.newNumber.map(String.init) ?? "")
@@ -164,8 +180,7 @@ private struct UnifiedDiff: View {
                         Text(symbol(line) + line.text)
                             .foregroundStyle(line.kind == .meta ? ThemeColor.diffMeta : line.color)
                             .textSelection(.enabled)
-                            .fixedSize(horizontal: true, vertical: false)
-                        Spacer(minLength: 0)
+                            .frame(maxWidth: .infinity, alignment: .leading)   // wrap, no horizontal scroll
                     }
                     .font(Typography.code)
                     .foregroundStyle(ThemeColor.diffMeta)
