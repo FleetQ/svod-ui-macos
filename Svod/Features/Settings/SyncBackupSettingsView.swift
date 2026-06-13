@@ -70,7 +70,7 @@ struct SyncBackupSettingsView: View {
             }
 
             Section {
-                Text("The App API stays loopback-only. The GitHub token is stored in your Keychain; the engine receives only a `keychain:` reference — never a raw secret over the API.")
+                Text("The App API stays loopback-only. The GitHub token is written to a user-only local file (chmod 600); the engine receives only a `file:` reference — never a raw secret over the API.")
                     .font(Typography.caption).foregroundStyle(ThemeColor.textTertiary)
             }
         }
@@ -147,7 +147,7 @@ struct SyncBackupSettingsView: View {
 
     /// Show a calm label for a ref without leaking anything (refs carry no secret).
     private func friendly(_ remote: String) -> String {
-        if remote.hasPrefix("keychain:") { return "a private GitHub repo (Keychain)" }
+        if remote.hasPrefix("file:") || remote.hasPrefix("keychain:") { return "a private GitHub repo" }
         return remote
     }
 

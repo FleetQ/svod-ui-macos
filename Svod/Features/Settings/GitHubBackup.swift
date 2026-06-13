@@ -54,11 +54,10 @@ final class GitHubBackup: ObservableObject {
             let name = "svod-backup-\(vaultId)"
             let login = try await ensureRepo(token: token, name: name)
             let authedURL = "https://x-access-token:\(token)@github.com/\(login)/\(name).git"
-            let account = name
-            try storeInKeychain(account: account, value: authedURL)
+            let ref = try storeRemote(vaultId: vaultId, url: authedURL)
             let repo = "\(login)/\(name)"
             phase = .connected(repo: repo)
-            return ("keychain:\(account)", repo)
+            return (ref, repo)
         } catch {
             phase = .failed((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
             return nil
@@ -146,17 +145,27 @@ final class GitHubBackup: ObservableObject {
         return u.login
     }
 
-    // MARK: keychain — open ACL so the headless engine resolves it without a prompt
-    private func storeInKeychain(account: String, value: String) throws {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/security")
-        p.arguments = ["add-generic-password", "-U", "-A", "-s", "svod", "-a", account, "-w", value]
-        let err = Pipe(); p.standardError = err; p.standardOutput = Pipe()
-        try p.run(); p.waitUntilExit()
-        guard p.terminationStatus == 0 else {
-            let msg = String(data: err.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-            throw GHError.message("Keychain write failed. \(msg)")
+    // MARK: secret storage — a local 0600 file the engine resolves via a `file:` ref
+    //
+    // The authenticated remote URL (with the token) is written to a user-only file
+    // and handed to the engine as `file:<path>` — never on argv (no `ps` leak) and
+    // not in a world-readable Keychain item. Mirrors how git's credential.store /
+    // ~/.netrc keep push credentials. The raw token still never crosses the App API.
+    private func storeRemote(vaultId: String, url: String) throws -> String {
+        let fm = FileManager.default
+        let dir = try fm.url(for: .applicationSupportDirectory, in: .userDomainMask,
+                             appropriateFor: nil, create: true)
+            .appendingPathComponent("Svod", isDirectory: true)
+        try fm.createDirectory(at: dir, withIntermediateDirectories: true,
+                               attributes: [.posixPermissions: 0o700])
+        let file = dir.appendingPathComponent("backup-\(vaultId).remote")
+        // Create empty with 0600 first so the secret is never briefly world-readable.
+        if !fm.fileExists(atPath: file.path) {
+            fm.createFile(atPath: file.path, contents: nil, attributes: [.posixPermissions: 0o600])
         }
+        try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+        try url.write(to: file, atomically: false, encoding: .utf8)
+        return "file:\(file.path)"
     }
 
     enum GHError: LocalizedError {
