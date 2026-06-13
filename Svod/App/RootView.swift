@@ -54,14 +54,9 @@ struct RootView: View {
     // MARK: toolbar
     @ToolbarContentBuilder private var toolbarContent: some ToolbarContent {
         ToolbarItemGroup(placement: .navigation) {
-            Button {
-                withAnimation(Motion.pane) {
-                    columnVisibility = (columnVisibility == .detailOnly) ? .all : .detailOnly
-                }
-            } label: { Image(systemName: "sidebar.left") }
-            .help("Toggle sidebar")
-
-            // Active-vault indicator + switcher (hidden when single-vault).
+            // NavigationSplitView already provides the sidebar toggle (and the
+            // View ▸ Show/Hide Sidebar ⌃⌘S menu item), so we don't add our own —
+            // just the active-vault indicator + switcher (hidden when single-vault).
             VaultSwitcherSlot()
         }
 
