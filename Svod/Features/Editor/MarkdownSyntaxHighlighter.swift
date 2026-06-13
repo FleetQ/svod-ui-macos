@@ -112,18 +112,34 @@ struct MarkdownSyntaxHighlighter {
         }
     }
 
-    // MARK: tables  — lines containing `|`
+    // MARK: tables  — lines containing `|` (monospace; header bold; pipes/separator dimmed)
     private func styleTables(_ s: NSTextStorage, _ text: String) {
-        enumerateLines(text) { line, range in
-            let t = line.trimmingCharacters(in: .whitespaces)
-            guard t.hasPrefix("|") || (t.contains("|") && t.contains("---")) else { return }
-            s.addAttribute(.font, value: monoFont, range: range)
-            // separator row → faint
-            if t.replacingOccurrences(of: "|", with: "")
-                .replacingOccurrences(of: "-", with: "")
-                .replacingOccurrences(of: ":", with: "")
-                .trimmingCharacters(in: .whitespaces).isEmpty {
-                s.addAttribute(.foregroundColor, value: cFaint, range: range)
+        let ns = text as NSString
+        var lines: [NSRange] = []
+        ns.enumerateSubstrings(in: NSRange(location: 0, length: ns.length),
+                               options: [.byLines, .substringNotRequired]) { _, r, _, _ in lines.append(r) }
+        func body(_ r: NSRange) -> String { ns.substring(with: r).trimmingCharacters(in: .whitespaces) }
+        func isRow(_ t: String) -> Bool { t.hasPrefix("|") || (t.contains("|") && t.contains("---")) }
+        func isSeparator(_ t: String) -> Bool {
+            t.contains("-") && t.replacingOccurrences(of: "|", with: "")
+                .replacingOccurrences(of: "-", with: "").replacingOccurrences(of: ":", with: "")
+                .trimmingCharacters(in: .whitespaces).isEmpty
+        }
+        let headerFont = NSFont.monospacedSystemFont(ofSize: baseFont.pointSize, weight: .semibold)
+        for (i, r) in lines.enumerated() {
+            let t = body(r)
+            guard isRow(t) else { continue }
+            s.addAttribute(.font, value: monoFont, range: r)
+            if isSeparator(t) {
+                s.addAttribute(.foregroundColor, value: cFaint, range: r)
+                if i > 0, isRow(body(lines[i - 1])) {       // bold the header row above the separator
+                    s.addAttribute(.font, value: headerFont, range: lines[i - 1])
+                }
+            } else {
+                // dim the column separators so cell content stands out
+                ns.enumerateSubstrings(in: r, options: .byComposedCharacterSequences) { sub, sr, _, _ in
+                    if sub == "|" { s.addAttribute(.foregroundColor, value: cFaint, range: sr) }
+                }
             }
         }
     }
@@ -258,14 +274,28 @@ struct MarkdownSyntaxHighlighter {
             } else {
                 color = isResolved(trimmed) ? cLink : cLinkBad
             }
-            s.addAttribute(.foregroundColor, value: color, range: m.range)
-            s.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: m.range(at: 1))
+            // Aliased [[target|alias]] → show `alias` as the link, dim the `target|`
+            // prefix (Obsidian-style) so link-heavy tables/notes stay readable.
+            let innerLoc = m.range(at: 1).location
+            let innerLen = m.range(at: 1).length
+            let pipe = (inner as NSString).range(of: "|")
+            let aliasRange: NSRange
+            if pipe.location != NSNotFound {
+                let dimLen = pipe.location + 1   // "target|"
+                s.addAttribute(.foregroundColor, value: cFaint,
+                               range: NSRange(location: innerLoc, length: dimLen))
+                aliasRange = NSRange(location: innerLoc + dimLen, length: innerLen - dimLen)
+            } else {
+                aliasRange = m.range(at: 1)
+            }
+            s.addAttribute(.foregroundColor, value: color, range: aliasRange)
+            s.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: aliasRange)
             // dim the `[[` `]]` brackets
             s.addAttribute(.foregroundColor, value: cFaint,
                            range: NSRange(location: m.range.location, length: 2))
             s.addAttribute(.foregroundColor, value: cFaint,
                            range: NSRange(location: m.range.location + m.range.length - 2, length: 2))
-            // tag the inner range with the full target (vault:path preserved for cross-vault)
+            // whole inner is the click target (resolves to `trimmed`)
             s.addAttribute(.link, value: "svodwiki://\(trimmed)", range: m.range(at: 1))
         }
     }
