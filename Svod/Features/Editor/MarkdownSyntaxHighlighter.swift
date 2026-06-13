@@ -24,9 +24,10 @@ struct MarkdownSyntaxHighlighter {
 
     init(isResolved: @escaping (String) -> Bool = { _ in true }) {
         self.isResolved = isResolved
-        let size = NSFont.preferredFont(forTextStyle: .body).pointSize
-        self.baseFont = NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
-        self.monoFont = NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
+        // Prose is proportional (this is a knowledge base, not a code editor);
+        // monospace is reserved for code, inline code and tables.
+        self.baseFont = NSFont.preferredFont(forTextStyle: .body)
+        self.monoFont = NSFont.monospacedSystemFont(ofSize: baseFont.pointSize, weight: .regular)
     }
 
     // Theme colors resolved to NSColor for the text system.
@@ -39,6 +40,7 @@ struct MarkdownSyntaxHighlighter {
     private let cLinkCross    = nsColor(ThemeColor.accentMuted)   // cross-vault [[vault:note]]
     private let cCodeBg       = nsColor(ThemeColor.surfaceHover)
     private let cCode         = nsColor(ThemeColor.accent)
+    private let cDone         = nsColor(ThemeColor.sync)         // completed task checkbox
 
     // MARK: entry point — restyle the whole storage
     func highlight(_ storage: NSTextStorage) {
@@ -57,9 +59,14 @@ struct MarkdownSyntaxHighlighter {
         styleBlockquotes(storage, text)
         styleTables(storage, text)
         styleLists(storage, text)
+        // Wikilinks before markdown links so a `[[note]]` used as link text can't
+        // clobber the `[text](url)` color/.link set by the markdown-link pass.
+        styleWikilinks(storage, text)
+        styleImages(storage, text)
+        styleMarkdownLinks(storage, text)
         styleInlineCode(storage, text)
         styleEmphasis(storage, text)
-        styleWikilinks(storage, text)
+        styleStrikethrough(storage, text)
         storage.endEditing()
     }
 
@@ -70,7 +77,7 @@ struct MarkdownSyntaxHighlighter {
             let level = hashes
             let weight: NSFont.Weight = level <= 2 ? .bold : .semibold
             let scale: CGFloat = [0: 1.0, 1: 1.6, 2: 1.4, 3: 1.22, 4: 1.1, 5: 1.0, 6: 1.0][level] ?? 1.0
-            let f = NSFont.monospacedSystemFont(ofSize: baseFont.pointSize * scale, weight: weight)
+            let f = NSFont.systemFont(ofSize: baseFont.pointSize * scale, weight: weight)
             s.addAttribute(.font, value: f, range: range)
             s.addAttribute(.foregroundColor, value: cText, range: range)
             // dim the `### ` marker
@@ -129,6 +136,23 @@ struct MarkdownSyntaxHighlighter {
             if t.hasPrefix("- ") || t.hasPrefix("* ") || t.hasPrefix("+ ") {
                 s.addAttribute(.foregroundColor, value: cAccent,
                                range: NSRange(location: range.location + indent, length: 1))
+                // task list: "[ ] " (open) / "[x] " (done) right after the bullet
+                let after = t.dropFirst(2)
+                if after.hasPrefix("[ ] ") || after.hasPrefix("[x] ") || after.hasPrefix("[X] ") {
+                    let done = !after.hasPrefix("[ ] ")
+                    let boxLoc = range.location + indent + 2          // after "- "
+                    s.addAttribute(.foregroundColor, value: done ? cDone : cAccent,
+                                   range: NSRange(location: boxLoc, length: 3))   // "[ ]"
+                    if done {
+                        let textLoc = boxLoc + 4                       // after "[x] "
+                        let textLen = range.location + range.length - textLoc
+                        if textLen > 0 {
+                            let r = NSRange(location: textLoc, length: textLen)
+                            s.addAttribute(.foregroundColor, value: cFaint, range: r)
+                            s.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: r)
+                        }
+                    }
+                }
             } else if let dot = t.firstIndex(of: "."),
                       t[t.startIndex..<dot].allSatisfy(\.isNumber),
                       t.index(after: dot) < t.endIndex, t[t.index(after: dot)] == " " {
@@ -144,6 +168,47 @@ struct MarkdownSyntaxHighlighter {
         applyRegex("`[^`\\n]+`", to: text) { m in
             s.addAttribute(.foregroundColor, value: cCode, range: m.range)
             s.addAttribute(.backgroundColor, value: cCodeBg, range: m.range)
+        }
+    }
+
+    // MARK: images  ![alt](url)  — styled, not rendered (alt readable, syntax dimmed)
+    private func styleImages(_ s: NSTextStorage, _ text: String) {
+        applyRegex("!\\[([^\\]\\n]*)\\]\\(([^)\\n]+)\\)", to: text) { m in
+            s.addAttribute(.foregroundColor, value: cFaint, range: m.range)
+            if m.range(at: 1).length > 0 {
+                s.addAttribute(.foregroundColor, value: cSecondary, range: m.range(at: 1))
+            }
+        }
+    }
+
+    // MARK: markdown links  [text](url)  — clickable; URL dimmed. Skips ![images].
+    private func styleMarkdownLinks(_ s: NSTextStorage, _ text: String) {
+        applyRegex("(?<!!)\\[([^\\]\\n]+)\\]\\(([^)\\n]+)\\)", to: text) { m in
+            let url = (text as NSString).substring(with: m.range(at: 2))
+            let textRange = m.range(at: 1)
+            s.addAttribute(.foregroundColor, value: cLink, range: textRange)
+            s.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: textRange)
+            s.addAttribute(.link, value: url, range: textRange)
+            // dim the leading `[` and the trailing `](url)`
+            s.addAttribute(.foregroundColor, value: cFaint,
+                           range: NSRange(location: m.range.location, length: 1))
+            let textEnd = textRange.location + textRange.length
+            let tailLen = m.range.location + m.range.length - textEnd
+            if tailLen > 0 {
+                s.addAttribute(.foregroundColor, value: cFaint,
+                               range: NSRange(location: textEnd, length: tailLen))
+            }
+        }
+    }
+
+    // MARK: strikethrough  ~~text~~
+    private func styleStrikethrough(_ s: NSTextStorage, _ text: String) {
+        applyRegex("~~([^~\\n]+)~~", to: text) { m in
+            s.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: m.range(at: 1))
+            s.addAttribute(.foregroundColor, value: cFaint,
+                           range: NSRange(location: m.range.location, length: 2))
+            s.addAttribute(.foregroundColor, value: cFaint,
+                           range: NSRange(location: m.range.location + m.range.length - 2, length: 2))
         }
     }
 

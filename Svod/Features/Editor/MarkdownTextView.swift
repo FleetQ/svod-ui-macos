@@ -51,7 +51,9 @@ struct MarkdownTextView: NSViewRepresentable {
         tv.backgroundColor = nsColor(ThemeColor.editorSurface)
         tv.insertionPointColor = nsColor(ThemeColor.accent)
         tv.textColor = nsColor(ThemeColor.textPrimary)
-        tv.font = NSFont.monospacedSystemFont(ofSize: NSFont.preferredFont(forTextStyle: .body).pointSize, weight: .regular)
+        // Proportional body font (prose, not a code editor); the highlighter swaps
+        // in monospace only for code, inline code and tables.
+        tv.font = NSFont.preferredFont(forTextStyle: .body)
         tv.textContainerInset = NSSize(width: Spacing.xl, height: Spacing.xl)
         tv.allowsCharacterPickerTouchBarItem = false
         tv.linkTextAttributes = [:]   // we colour links ourselves; suppress default blue
@@ -244,10 +246,17 @@ struct MarkdownTextView: NSViewRepresentable {
 
         // MARK: link click — open same-vault or cross-vault wikilink
         func textView(_ view: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
-            guard let value = link as? String, value.hasPrefix("svodwiki://") else { return false }
-            let target = String(value.dropFirst("svodwiki://".count))
-            parent.onOpenLink(target)
-            return true
+            guard let value = link as? String else { return false }
+            if value.hasPrefix("svodwiki://") {
+                parent.onOpenLink(String(value.dropFirst("svodwiki://".count)))
+                return true
+            }
+            // Standard markdown link → open externally.
+            if (value.hasPrefix("http://") || value.hasPrefix("https://")), let url = URL(string: value) {
+                NSWorkspace.shared.open(url)
+                return true
+            }
+            return false
         }
 
         // Use the layout manager to hit-test the .link attribute under the mouse.
