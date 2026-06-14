@@ -67,6 +67,7 @@ struct MarkdownSyntaxHighlighter {
         styleInlineCode(storage, text)
         styleEmphasis(storage, text)
         styleStrikethrough(storage, text)
+        clearTableDecorations(storage)
         storage.endEditing()
     }
 
@@ -109,6 +110,18 @@ struct MarkdownSyntaxHighlighter {
                 s.addAttribute(.foregroundColor, value: cAccent,
                                range: NSRange(location: range.location + off, length: 1))
             }
+        }
+    }
+
+    // Table lines are rendered as a drawn grid; their raw glyphs are hidden, but
+    // underline/strikethrough decorations (from wikilinks/etc.) still paint over the
+    // grid. Strip them so they don't show as a line through the rendered cells.
+    private func clearTableDecorations(_ s: NSTextStorage) {
+        let full = NSRange(location: 0, length: s.length)
+        s.enumerateAttribute(.svodTableLine, in: full) { value, range, _ in
+            guard value != nil else { return }
+            s.removeAttribute(.underlineStyle, range: range)
+            s.removeAttribute(.strikethroughStyle, range: range)
         }
     }
 
