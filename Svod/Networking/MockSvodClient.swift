@@ -200,13 +200,15 @@ public final class MockSvodClient: SvodClient, @unchecked Sendable {
     }
 
     @discardableResult
-    public func importVault(source: String, into: String?, vault: String?) async throws -> ImportResult {
+    public func importVault(source: String, into: String?, vault: String?, followSymlinks: Bool) async throws -> ImportResult {
         try await gate()
         let base = (into.map { $0 + "/" } ?? "")
-        return ImportResult(
-            imported: [base + "Daily/2026-06-10.md", base + "Projects/svod.md", base + "Inbox/idea.md"],
-            unchanged: [base + "README.md"],
-            skipped: [base + "Projects/secret.env"])   // present-but-differing or secret-blocked
+        var imported = [base + "Daily/2026-06-10.md", base + "Projects/svod.md", base + "Inbox/idea.md"]
+        var skipped = [base + "Projects/secret.env"]   // secret-blocked
+        // With followSymlinks on, a symlinked note is materialized instead of skipped.
+        if followSymlinks { imported.append(base + "Linked/shared-spec.md") }
+        else { skipped.append(base + "Linked/shared-spec.md (symlink)") }
+        return ImportResult(imported: imported, unchanged: [base + "README.md"], skipped: skipped)
     }
 
     // external sources — a tiny in-memory registry for previews

@@ -105,15 +105,38 @@ struct SourcesSettingsView: View {
         if let e = r.error {
             Label(e, systemImage: "exclamationmark.triangle").font(Typography.caption2).foregroundStyle(ThemeColor.danger)
         } else {
-            HStack(spacing: Spacing.sm) {
-                part("\(r.created.count) new", ThemeColor.sync, r.created.count)
-                part("\(r.updated.count) updated", ThemeColor.accent, r.updated.count)
-                part("\(r.conflicts.count) conflict", ThemeColor.conflict, r.conflicts.count)
-                part("\(r.orphaned.count) orphaned", ThemeColor.textTertiary, r.orphaned.count)
-                part("\(r.deleted.count) deleted", ThemeColor.textTertiary, r.deleted.count)
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
+                HStack(spacing: Spacing.sm) {
+                    part("\(r.created.count) new", ThemeColor.sync, r.created.count)
+                    part("\(r.updated.count) updated", ThemeColor.accent, r.updated.count)
+                    part("\(r.conflicts.count) conflict", ThemeColor.conflict, r.conflicts.count)
+                    part("\(r.orphaned.count) orphaned", ThemeColor.textTertiary, r.orphaned.count)
+                    part("\(r.deleted.count) deleted", ThemeColor.textTertiary, r.deleted.count)
+                    part("\(r.skipped.count) skipped", ThemeColor.conflict, r.skipped.count)
+                }
+                .font(Typography.caption2)
+                // Conflicts need attention — the vault copy was edited locally and left
+                // untouched, so surface the exact files (not just a count).
+                if !r.conflicts.isEmpty { conflictList(r.conflicts) }
             }
-            .font(Typography.caption2)
         }
+    }
+
+    @ViewBuilder private func conflictList(_ paths: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Label("Kept your local edits — not overwritten:", systemImage: "exclamationmark.triangle.fill")
+                .font(Typography.caption2).foregroundStyle(ThemeColor.conflict)
+            ForEach(paths.prefix(8), id: \.self) { p in
+                Text(p).font(Typography.caption2).foregroundStyle(ThemeColor.textSecondary)
+                    .lineLimit(1).truncationMode(.middle)
+            }
+            if paths.count > 8 {
+                Text("+ \(paths.count - 8) more").font(Typography.caption2).foregroundStyle(ThemeColor.textTertiary)
+            }
+        }
+        .padding(Spacing.xs)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(ThemeColor.conflictSubtle, in: RoundedRectangle(cornerRadius: 6))
     }
     @ViewBuilder private func part(_ label: String, _ color: Color, _ n: Int) -> some View {
         if n > 0 { Text(label).foregroundStyle(color) }

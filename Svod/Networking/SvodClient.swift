@@ -57,8 +57,9 @@ public protocol SvodClient: AnyObject, Sendable {
     // vaults (engine v0.3.0 multi-vault)
     func vaults() async throws -> Vaults
     /// One-shot Obsidian import into `vault` (nil ⇒ default). Idempotent.
+    /// `followSymlinks` (contract 0.7.0) materializes symlinks instead of skipping them.
     @discardableResult
-    func importVault(source: String, into: String?, vault: String?) async throws -> ImportResult
+    func importVault(source: String, into: String?, vault: String?, followSymlinks: Bool) async throws -> ImportResult
 
     // external sources (engine v0.6.0 — re-syncable external files/dirs)
     func listSources(vault: String?) async throws -> [ExternalSource]
@@ -112,6 +113,10 @@ public extension SvodClient {
     }
     func search(query: String) async throws -> SearchResult {
         try await search(query: query, mode: .hybrid, limit: nil, tags: [], pathPrefix: nil)
+    }
+    @discardableResult
+    func importVault(source: String, into: String? = nil, vault: String? = nil) async throws -> ImportResult {
+        try await importVault(source: source, into: into, vault: vault, followSymlinks: false)
     }
 }
 
