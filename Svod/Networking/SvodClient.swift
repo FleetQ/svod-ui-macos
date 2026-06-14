@@ -97,6 +97,21 @@ public protocol SvodClient: AnyObject, Sendable {
     @discardableResult
     func syncNow(vault: String?) async throws -> SyncAck
 
+    // Embeddings & indexing (engine v1.2.0 / contract 0.8.0; global embedder).
+    // Throw `.notImplemented` on 501 so the UI degrades on older engines.
+    /// Switch the active embedder (persisted; triggers a background re-embed).
+    @discardableResult
+    func setEmbedder(_ request: EmbedderRequest, vault: String?) async throws -> EmbedderInfo
+    /// Probe an embedder spec (embed a test string) without persisting it.
+    func testEmbedder(_ request: EmbedderRequest, vault: String?) async throws -> EmbedderTestResult
+    /// Re-embed the whole vault in the background (keyword search stays available).
+    @discardableResult
+    func reembed(vault: String?) async throws -> IndexStatus
+    @discardableResult
+    func pauseIndex(vault: String?) async throws -> IndexStatus
+    @discardableResult
+    func resumeIndex(vault: String?) async throws -> IndexStatus
+
     /// Live event stream. The stream finishes (or throws) when the socket drops;
     /// reconnection policy lives in the caller (EngineModel), which re-subscribes.
     func events() -> AsyncThrowingStream<SvodEvent, Error>

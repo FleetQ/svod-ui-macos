@@ -243,6 +243,8 @@ public struct Settings: Codable, Hashable, Sendable {
     public var embedderModel: String?
     public var embedderDim: Int?
     public var host: String
+    /// Active embedder (contract 0.8.0); nil on older engines.
+    public var embedder: EmbedderInfo? = nil
 }
 
 public struct IndexStatus: Codable, Hashable, Sendable {
@@ -250,9 +252,80 @@ public struct IndexStatus: Codable, Hashable, Sendable {
     public var headIndexed: String?
     public var model: String
     public var dim: Int
-    public init(docCount: Int, headIndexed: String? = nil, model: String, dim: Int) {
+    /// Contract 0.8.0: BM25 ready (keyword search works) + background-embedding progress.
+    public var keywordReady: Bool
+    public var embedding: EmbeddingStatus?
+    public init(docCount: Int, headIndexed: String? = nil, model: String, dim: Int,
+                keywordReady: Bool = true, embedding: EmbeddingStatus? = nil) {
         self.docCount = docCount; self.headIndexed = headIndexed; self.model = model; self.dim = dim
+        self.keywordReady = keywordReady; self.embedding = embedding
     }
+    // Tolerant decode so older engines (without the 0.8.0 fields) still parse.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        docCount = try c.decodeIfPresent(Int.self, forKey: .docCount) ?? 0
+        headIndexed = try c.decodeIfPresent(String.self, forKey: .headIndexed)
+        model = try c.decodeIfPresent(String.self, forKey: .model) ?? ""
+        dim = try c.decodeIfPresent(Int.self, forKey: .dim) ?? 0
+        keywordReady = try c.decodeIfPresent(Bool.self, forKey: .keywordReady) ?? true
+        embedding = try c.decodeIfPresent(EmbeddingStatus.self, forKey: .embedding)
+    }
+}
+
+// MARK: - Embeddings & indexing (engine v1.2.0 / contract 0.8.0)
+
+/// The active embedder. `endpoint` is nil for in-process providers (local-onnx/none).
+public struct EmbedderInfo: Codable, Hashable, Sendable {
+    public var provider: String        // local-onnx | local-ollama | remote-openai | none
+    public var model: String
+    public var endpoint: String?
+    public var dimension: Int          // 0 when BM25-only / not yet indexed
+    public init(provider: String, model: String, endpoint: String? = nil, dimension: Int = 0) {
+        self.provider = provider; self.model = model; self.endpoint = endpoint; self.dimension = dimension
+    }
+}
+
+/// Background-embedding progress (also pushed as the `index.progress` WS event).
+public struct EmbeddingStatus: Codable, Hashable, Sendable {
+    public enum State: String, Codable, Sendable { case idle, running, paused, error, unknown
+        public init(from decoder: Decoder) throws {
+            self = State(rawValue: try decoder.singleValueContainer().decode(String.self)) ?? .unknown
+        }
+    }
+    public var state: State
+    public var done: Int
+    public var total: Int
+    public var provider: String
+    public var model: String
+    public var error: String?
+    public init(state: State, done: Int, total: Int, provider: String, model: String, error: String? = nil) {
+        self.state = state; self.done = done; self.total = total
+        self.provider = provider; self.model = model; self.error = error
+    }
+    /// 0…1 progress, or nil when total is unknown/zero.
+    public var fraction: Double? { total > 0 ? min(1, Double(done) / Double(total)) : nil }
+}
+
+/// Switch (PUT /embedder) or probe (POST /embedder/test) the embedder.
+/// `apiKeyRef` is a Secrets reference (env:/file:/keychain:) — a raw key is rejected (422).
+public struct EmbedderRequest: Codable, Hashable, Sendable {
+    public var provider: String
+    public var model: String?
+    public var endpoint: String?
+    public var apiKeyRef: String?
+    public var maxThreads: Int?
+    public init(provider: String, model: String? = nil, endpoint: String? = nil,
+                apiKeyRef: String? = nil, maxThreads: Int? = nil) {
+        self.provider = provider; self.model = model; self.endpoint = endpoint
+        self.apiKeyRef = apiKeyRef; self.maxThreads = maxThreads
+    }
+}
+
+public struct EmbedderTestResult: Codable, Hashable, Sendable {
+    public var ok: Bool
+    public var dimension: Int?
+    public var latencyMs: Int64?
+    public var error: String?
 }
 
 public struct Conflicts: Codable, Hashable, Sendable {

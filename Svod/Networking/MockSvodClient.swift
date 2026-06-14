@@ -161,14 +161,20 @@ public final class MockSvodClient: SvodClient, @unchecked Sendable {
 
     public func settings() async throws -> Settings {
         try await gate()
-        return Settings(vaultPath: "/Users/katsarov/Svod", apiVersion: "0.1.0",
-                        embedderProvider: "onnx-local", embedderModel: "multilingual-e5-small",
-                        embedderDim: 384, host: "127.0.0.1")
+        return Settings(vaultPath: "/Users/katsarov/Svod", apiVersion: "0.8.0",
+                        embedderProvider: Self.mockEmbedder.provider, embedderModel: Self.mockEmbedder.model,
+                        embedderDim: Self.mockEmbedder.dimension, host: "127.0.0.1",
+                        embedder: Self.mockEmbedder)
     }
 
     public func indexStatus() async throws -> IndexStatus {
         try await gate()
-        return IndexStatus(docCount: 1287, headIndexed: "32af73c", model: "multilingual-e5-small", dim: 384)
+        return IndexStatus(docCount: 1287, headIndexed: "32af73c",
+                           model: Self.mockEmbedder.model, dim: Self.mockEmbedder.dimension,
+                           keywordReady: true,
+                           embedding: EmbeddingStatus(state: .running, done: 1240, total: 2727,
+                                                      provider: Self.mockEmbedder.provider,
+                                                      model: Self.mockEmbedder.model))
     }
 
     public func metrics() async throws -> Metrics {
@@ -243,6 +249,47 @@ public final class MockSvodClient: SvodClient, @unchecked Sendable {
         for s in Self.mockSources { out.append(try await syncSource(id: s.id, vault: vault)) }
         return out
     }
+
+    // embeddings & indexing — in-memory embedder for previews
+    private static var mockEmbedder = EmbedderInfo(provider: "local-onnx",
+                                                   model: "multilingual-e5-small", endpoint: nil, dimension: 384)
+    @discardableResult
+    public func setEmbedder(_ request: EmbedderRequest, vault: String?) async throws -> EmbedderInfo {
+        try await gate()
+        let dim: Int = {
+            switch request.provider {
+            case "none": return 0
+            case "local-ollama": return 768
+            case "remote-openai": return 1536
+            default: return 384
+            }
+        }()
+        Self.mockEmbedder = EmbedderInfo(provider: request.provider,
+                                         model: request.model ?? Self.mockEmbedder.model,
+                                         endpoint: request.endpoint, dimension: dim)
+        return Self.mockEmbedder
+    }
+    public func testEmbedder(_ request: EmbedderRequest, vault: String?) async throws -> EmbedderTestResult {
+        try await gate()
+        if request.provider == "remote-openai", (request.apiKeyRef ?? "").isEmpty {
+            return EmbedderTestResult(ok: false, dimension: nil, latencyMs: nil,
+                                      error: "Missing apiKeyRef (use a keychain:/env:/file: reference).")
+        }
+        let dim = request.provider == "none" ? 0 : (request.provider == "remote-openai" ? 1536 : 384)
+        return EmbedderTestResult(ok: true, dimension: dim, latencyMs: 42, error: nil)
+    }
+    @discardableResult
+    public func reembed(vault: String?) async throws -> IndexStatus { try await gate(); return try await indexStatus() }
+    @discardableResult
+    public func pauseIndex(vault: String?) async throws -> IndexStatus {
+        try await gate()
+        return IndexStatus(docCount: 1287, headIndexed: "32af73c", model: Self.mockEmbedder.model,
+                           dim: Self.mockEmbedder.dimension, keywordReady: true,
+                           embedding: EmbeddingStatus(state: .paused, done: 1240, total: 2727,
+                                                      provider: Self.mockEmbedder.provider, model: Self.mockEmbedder.model))
+    }
+    @discardableResult
+    public func resumeIndex(vault: String?) async throws -> IndexStatus { try await gate(); return try await indexStatus() }
 
     @discardableResult
     public func resolveConflict(path: String, content: String, expectedRevision: String?) async throws -> WriteResult {
