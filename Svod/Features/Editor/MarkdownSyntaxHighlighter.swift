@@ -113,15 +113,25 @@ struct MarkdownSyntaxHighlighter {
         }
     }
 
-    // Table lines are rendered as a drawn grid; their raw glyphs are hidden, but
-    // underline/strikethrough decorations (from wikilinks/etc.) still paint over the
-    // grid. Strip them so they don't show as a line through the rendered cells.
+    // Table lines render as a drawn grid. Strip decorations (so wikilink underlines
+    // don't paint across cells) and give each rendered row extra height via the
+    // paragraph style (reliable, unlike the layout delegate) — the grid is drawn to
+    // fill that taller fragment, giving the rows breathing room. The separator line
+    // is left for the layout manager to collapse (so it can still be edited when the
+    // table is revealed).
     private func clearTableDecorations(_ s: NSTextStorage) {
         let full = NSRange(location: 0, length: s.length)
+        let rowH = ceil(baseFont.boundingRectForFont.height) + 14   // line height + vertical air
         s.enumerateAttribute(.svodTableLine, in: full) { value, range, _ in
-            guard value != nil else { return }
+            guard let inf = value as? TableLineInfo else { return }
             s.removeAttribute(.underlineStyle, range: range)
             s.removeAttribute(.strikethroughStyle, range: range)
+            guard inf.gridRow >= 0 else { return }      // separator: leave to the layout manager
+            let ps = NSMutableParagraphStyle()
+            ps.lineSpacing = 0
+            ps.minimumLineHeight = rowH
+            ps.maximumLineHeight = rowH
+            s.addAttribute(.paragraphStyle, value: ps, range: range)
         }
     }
 
