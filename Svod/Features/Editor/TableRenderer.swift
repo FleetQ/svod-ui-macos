@@ -124,10 +124,8 @@ final class TableLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
     private(set) var revealedBlock: NSRange?
 
     private let padH: CGFloat = 10
-    private let padV: CGFloat = 5
     private var bodyFont: NSFont { NSFont.preferredFont(forTextStyle: .body) }
     private var headFont: NSFont { NSFont.systemFont(ofSize: bodyFont.pointSize, weight: .semibold) }
-    private var rowHeight: CGFloat { ceil(bodyFont.boundingRectForFont.height) + padV * 2 }
 
     override init() { super.init(); delegate = self }
     required init?(coder: NSCoder) { super.init(coder: coder); delegate = self }
@@ -184,12 +182,11 @@ final class TableLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
                        in container: NSTextContainer,
                        forGlyphRange glyphRange: NSRange) -> Bool {
         let ci = characterIndexForGlyph(at: glyphRange.location)
-        guard let inf = info(at: ci), !isRevealed(inf) else { return false }
-        // One grid row per source line (separator → 0). Distributing the height this
-        // way (vs one giant line fragment) is what keeps scrolling/layout correct.
-        let h: CGFloat = inf.gridRow < 0 ? 0 : rowHeight
-        rect.pointee.size.height = h
-        usedRect.pointee.size.height = h
+        guard let inf = info(at: ci), !isRevealed(inf), inf.gridRow < 0 else { return false }
+        // Only collapse the |---| separator line; header/data lines keep their
+        // natural fragment height and the grid is drawn to match exactly.
+        rect.pointee.size.height = 0
+        usedRect.pointee.size.height = 0
         return true
     }
 
@@ -207,24 +204,27 @@ final class TableLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
                 let w = columnWidths(inf.table); colWCache[inf.blockId] = w; return w
             }()
             let frag = lineFragmentRect(forGlyphAt: glyphIndexForCharacter(at: lineRange.location), effectiveRange: nil)
-            drawRow(inf.table, rowIndex: inf.gridRow, colW: colW,
-                    at: NSPoint(x: frag.minX + origin.x, y: frag.minY + origin.y))
+            let r = NSRect(x: frag.minX + origin.x, y: frag.minY + origin.y, width: frag.width, height: frag.height)
+            drawRow(inf.table, rowIndex: inf.gridRow, colW: colW, in: r)
         }
     }
 
-    private func drawRow(_ t: MarkdownTable, rowIndex: Int, colW: [CGFloat], at p: NSPoint) {
+    // Draw one grid row to exactly fill its line fragment `frag` (so borders land on
+    // the real row boundaries, never through the text).
+    private func drawRow(_ t: MarkdownTable, rowIndex: Int, colW: [CGFloat], in frag: NSRect) {
         let isHeader = rowIndex == 0
         let row = t.rows[rowIndex]
         let bodyFont = self.bodyFont, headFont = self.headFont
         let border = nsColor(ThemeColor.borderSubtle)
+        let h = frag.height
         if isHeader {
             nsColor(ThemeColor.surfaceRaised).setFill()
-            NSRect(x: p.x, y: p.y, width: colW.reduce(0, +), height: rowHeight).fill()
+            NSRect(x: frag.minX, y: frag.minY, width: colW.reduce(0, +), height: h).fill()
         }
-        var x = p.x
+        var x = frag.minX
         for c in 0..<t.columns {
             let w = colW[c]
-            border.setStroke(); NSBezierPath(rect: NSRect(x: x, y: p.y, width: w, height: rowHeight)).stroke()
+            border.setStroke(); NSBezierPath(rect: NSRect(x: x, y: frag.minY, width: w, height: h)).stroke()
             let cell = c < row.count ? row[c] : MarkdownTable.Cell(display: "", target: nil)
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: isHeader ? headFont : bodyFont,
@@ -239,7 +239,7 @@ final class TableLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
             case .center: tx = x + (w - sz.width) / 2
             case .left:   break
             }
-            text.draw(at: NSPoint(x: tx, y: p.y + (rowHeight - sz.height) / 2), withAttributes: attrs)
+            text.draw(at: NSPoint(x: tx, y: frag.minY + (h - sz.height) / 2), withAttributes: attrs)
             x += w
         }
     }
@@ -260,17 +260,16 @@ final class TableLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
     func link(atContainerPoint p: NSPoint) -> String? {
         guard let storage = textStorage else { return nil }
         var found: String?
-        storage.enumerateAttribute(.svodTableLine, in: NSRange(location: 0, length: storage.length)) { v, _, stop in
-            guard let inf = v as? TableLineInfo, inf.isFirstLine, !isRevealed(inf) else { return }
-            let frag = lineFragmentRect(forGlyphAt: glyphIndexForCharacter(at: inf.blockRange.location), effectiveRange: nil)
-            let t = inf.table
-            let colW = columnWidths(t)
-            let gridRect = NSRect(x: frag.minX, y: frag.minY, width: colW.reduce(0, +), height: rowHeight * CGFloat(t.rows.count))
-            guard gridRect.contains(p) else { return }
-            let rowIdx = min(t.rows.count - 1, max(0, Int((p.y - frag.minY) / rowHeight)))
+        storage.enumerateAttribute(.svodTableLine, in: NSRange(location: 0, length: storage.length)) { v, lineRange, stop in
+            guard let inf = v as? TableLineInfo, inf.gridRow >= 0, !isRevealed(inf),
+                  inf.gridRow < inf.table.rows.count else { return }
+            let frag = lineFragmentRect(forGlyphAt: glyphIndexForCharacter(at: lineRange.location), effectiveRange: nil)
+            let colW = columnWidths(inf.table)
+            let cellsRect = NSRect(x: frag.minX, y: frag.minY, width: colW.reduce(0, +), height: frag.height)
+            guard cellsRect.contains(p) else { return }
             var x = frag.minX, colIdx = 0
             for (c, w) in colW.enumerated() { colIdx = c; if p.x < x + w { break }; x += w }
-            let row = t.rows[rowIdx]
+            let row = inf.table.rows[inf.gridRow]
             if colIdx < row.count { found = row[colIdx].target }
             stop.pointee = true
         }
