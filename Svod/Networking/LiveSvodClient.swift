@@ -211,6 +211,27 @@ public final class LiveSvodClient: SvodClient, @unchecked Sendable {
         try await sendNoBody("/api/v1/sync/now", method: "POST", query: vaultQuery(vault))
     }
 
+    // MARK: embeddings & indexing (contract 0.8.0)
+    @discardableResult
+    public func setEmbedder(_ request: EmbedderRequest, vault: String?) async throws -> EmbedderInfo {
+        try await send("/api/v1/embedder", method: "PUT", query: vaultQuery(vault), body: request)
+    }
+    public func testEmbedder(_ request: EmbedderRequest, vault: String?) async throws -> EmbedderTestResult {
+        try await send("/api/v1/embedder/test", method: "POST", query: vaultQuery(vault), body: request)
+    }
+    @discardableResult
+    public func reembed(vault: String?) async throws -> IndexStatus {
+        try await sendNoBody("/api/v1/index/reembed", method: "POST", query: vaultQuery(vault))
+    }
+    @discardableResult
+    public func pauseIndex(vault: String?) async throws -> IndexStatus {
+        try await sendNoBody("/api/v1/index/pause", method: "POST", query: vaultQuery(vault))
+    }
+    @discardableResult
+    public func resumeIndex(vault: String?) async throws -> IndexStatus {
+        try await sendNoBody("/api/v1/index/resume", method: "POST", query: vaultQuery(vault))
+    }
+
     // MARK: events (WebSocket)
     public func events() -> AsyncThrowingStream<SvodEvent, Error> {
         let wsURL = Self.websocketURL(from: baseURL)

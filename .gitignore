@@ -8,3 +8,4 @@ xcuserdata/
 .swiftpm/
 tooling/webeditor/node_modules/
 tooling/webeditor/package-lock.json
+*.runpod-api.key
