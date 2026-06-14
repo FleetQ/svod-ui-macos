@@ -6,3 +6,5 @@ xcuserdata/
 *.xcscmblueprint
 *.moved-aside
 .swiftpm/
+tooling/webeditor/node_modules/
+tooling/webeditor/package-lock.json

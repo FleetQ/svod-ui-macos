@@ -1,0 +1,85 @@
+/* Svod web editor — preview typography + chrome themed to the Svod tokens.
+   Dark-first; light is a faithful counterpart toggled by removing .dark on <body>. */
+
+:root {
+  --bg: #14161B; --surface: #1E222A; --hover: #232831;
+  --text: #ECEDEF; --text2: #A8AEB8; --text3: #767C87;
+  --accent: #6FA0E6; --link: #7FB0EE; --link-bad: #C08A6E;
+  --border: #2E343E; --border-strong: #3A424E; --string: #5BC2B0;
+  --measure: 760px;
+}
+body:not(.dark) {
+  --bg: #FCFBF8; --surface: #FFFFFF; --hover: #EEEDE8;
+  --text: #1B1D21; --text2: #55585F; --text3: #83868D;
+  --accent: #3D6FC4; --link: #2F66BE; --link-bad: #A45B2E;
+  --border: #D8D5CD; --border-strong: #C2BEB3; --string: #1F8C78;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; height: 100%; background: var(--bg);
+  -webkit-text-size-adjust: 100%; }
+body { color: var(--text);
+  font: 15px/1.6 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; }
+
+#editor { height: 100%; }
+
+/* ── Preview ──────────────────────────────────────────────────────────── */
+#preview {
+  max-width: var(--measure); margin: 0 auto; padding: 28px 28px 120px;
+  overflow: auto; height: 100%;
+}
+#preview > *:first-child { margin-top: 0; }
+#preview h1, #preview h2, #preview h3, #preview h4, #preview h5, #preview h6 {
+  line-height: 1.25; font-weight: 700; margin: 1.4em 0 0.5em; color: var(--text);
+}
+#preview h1 { font-size: 1.9em; }
+#preview h2 { font-size: 1.5em; padding-bottom: .2em; border-bottom: 1px solid var(--border); }
+#preview h3 { font-size: 1.25em; }
+#preview h4 { font-size: 1.05em; }
+#preview p, #preview li { color: var(--text); }
+#preview a { color: var(--link); text-decoration: none; }
+#preview a:hover { text-decoration: underline; }
+#preview a.wikilink { color: var(--link); }
+#preview a.wikilink.unresolved { color: var(--link-bad); border-bottom: 1px dashed var(--link-bad); }
+#preview blockquote {
+  margin: 1em 0; padding: .2em 1em; color: var(--text2);
+  border-left: 3px solid var(--accent); background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+#preview hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
+#preview img { max-width: 100%; border-radius: 6px; }
+
+/* inline code */
+#preview code {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: .88em; background: var(--hover); color: var(--accent);
+  padding: .12em .35em; border-radius: 4px;
+}
+/* code blocks */
+#preview pre.code {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  padding: 12px 14px; overflow: auto; margin: 1em 0;
+}
+#preview pre.code code { background: none; color: var(--text); padding: 0; font-size: .85em; line-height: 1.5; }
+
+/* tables */
+#preview table { border-collapse: collapse; width: auto; margin: 1em 0; font-size: .95em; }
+#preview th, #preview td { border: 1px solid var(--border); padding: 7px 12px; text-align: left; }
+#preview thead th { background: var(--surface); font-weight: 600; }
+#preview tbody tr:nth-child(even) { background: color-mix(in srgb, var(--hover) 45%, transparent); }
+
+/* task lists */
+#preview li input[type="checkbox"] { margin-right: .5em; }
+
+/* mermaid */
+#preview .mermaid { margin: 1em 0; padding: 12px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 8px; text-align: center; }
+#preview .mermaid svg { max-width: 100%; height: auto; }
+
+/* ── highlight.js token colors (mapped to Svod palette) ───────────────── */
+.hljs-comment, .hljs-quote { color: var(--text3); font-style: italic; }
+.hljs-keyword, .hljs-selector-tag, .hljs-built_in, .hljs-name, .hljs-tag { color: var(--accent); }
+.hljs-string, .hljs-attr, .hljs-template-tag, .hljs-addition { color: var(--string); }
+.hljs-number, .hljs-literal, .hljs-type, .hljs-class .hljs-title { color: var(--link); }
+.hljs-title, .hljs-section, .hljs-function .hljs-title { color: var(--text); font-weight: 600; }
+.hljs-meta, .hljs-symbol, .hljs-bullet { color: var(--text3); }
+.hljs-deletion { color: var(--link-bad); }

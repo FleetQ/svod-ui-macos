@@ -9,30 +9,19 @@ struct EditorView: View {
     @ObservedObject var model: EditorModel
     @EnvironmentObject var app: AppModel
 
-    @StateObject private var autocomplete = WikilinkAutocomplete()
-    @StateObject private var preview: LinkPreview
-    @State private var coordinator: MarkdownTextView.Coordinator?
-
-    init(model: EditorModel) {
-        self.model = model
-        _preview = StateObject(wrappedValue: LinkPreview(client: model.client))
-    }
-
     var body: some View {
-        GeometryReader { geo in
-            ZStack(alignment: .topLeading) {
-                content
-                overlays(in: geo.size)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // `.task` must hang off a STABLE container — attaching it to `content`
+        // (whose concrete type changes between empty/loading/editor) makes SwiftUI
+        // treat each branch as a new identity and restart the task in a tight loop.
+        ZStack {
+            ThemeColor.editorSurface
+            content
         }
-        .background(ThemeColor.editorSurface)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task(id: app.selectedPath) {
             guard let path = app.selectedPath else { return }
             await model.load(path: path)
-            autocomplete.setNames(model.noteNames)
         }
-        .onChange(of: model.noteNames) { _, names in autocomplete.setNames(names) }
     }
 
     // MARK: states
@@ -72,51 +61,14 @@ struct EditorView: View {
             .frame(maxHeight: split.frontmatter.entries.isEmpty ? 0 : nil)
             .fixedSize(horizontal: false, vertical: true)
 
-            MarkdownTextView(
+            WebEditorView(
                 text: bodyBinding,
-                focusMode: model.focusMode,
-                isResolved: { model.resolves($0) },
-                onAutocomplete: handleAutocomplete,
-                onHoverLink: handleHover,
-                onOpenLink: handleOpenLink,
-                register: { coord in
-                    coordinator = coord
-                    coord.onMove = { autocomplete.moveSelection($0) }
-                    coord.onChoose = { autocomplete.selectedMatch }
-                    coord.onCancel = { autocomplete.dismiss() }
-                }
+                previewMode: model.previewMode,
+                noteNames: model.noteNames,
+                onOpenLink: handleOpenLink
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-    }
-
-    // MARK: overlays — autocomplete popover + hover preview (clamped to the editor bounds)
-    @ViewBuilder private func overlays(in size: CGSize) -> some View {
-        if autocomplete.isActive {
-            let estHeight = min(CGFloat(autocomplete.matches.count) * 30 + 16, 300)
-            WikilinkPopover(model: autocomplete, resolves: { model.resolves($0) }) { name in
-                coordinator?.insertWikilink(name)
-                autocomplete.dismiss()
-            }
-            .offset(clampedOffset(autocomplete.anchor, in: size, width: 260, height: estHeight))
-            .transition(.opacity)
-        }
-        if preview.target != nil {
-            LinkPreviewCard(model: preview)
-                .offset(clampedOffset(preview.anchor, in: size, width: 280, height: 240))
-                .allowsHitTesting(false)
-                .transition(.opacity)
-        }
-    }
-
-    /// Keep a floating popover fully on-screen: clamp X to the editor width, and
-    /// flip the popover above its anchor when it would overflow the bottom edge.
-    private func clampedOffset(_ anchor: CGRect, in size: CGSize, width: CGFloat, height: CGFloat) -> CGSize {
-        let margin = Spacing.sm
-        let x = min(max(margin, anchor.minX), max(margin, size.width - width - margin))
-        let below = anchor.maxY + Spacing.xs
-        let y = (below + height > size.height) ? max(margin, anchor.minY - height - Spacing.xs) : below
-        return CGSize(width: x, height: y)
     }
 
     // MARK: frontmatter / body split + recompose (round-trip safe)
@@ -138,25 +90,6 @@ struct EditorView: View {
     }
 
     // MARK: callbacks
-    private func handleAutocomplete(_ query: String?, _ rect: CGRect) {
-        if let query {
-            autocomplete.begin(query: query, anchor: rect)
-        } else {
-            autocomplete.dismiss()
-        }
-        coordinator?.autocompleteActive = autocomplete.isActive
-    }
-
-    private func handleHover(_ target: String?, _ resolvedPath: String?, _ rect: CGRect) {
-        guard let target else { preview.hide(); return }
-        if let ref = GlobalNoteRef(globalId: target) {
-            // Cross-vault [[vault:note]]: preview from the other vault without switching.
-            preview.showCrossVault(ref: ref, anchor: rect)
-        } else {
-            preview.show(target: target, resolvedPath: model.resolvedPath(for: target), anchor: rect)
-        }
-    }
-
     private func handleOpenLink(_ target: String) {
         if let ref = GlobalNoteRef(globalId: target) {
             // Qualified [[vault:note]]: switch vault then open path.
@@ -187,10 +120,12 @@ private struct EditorToolbar: View {
             if model.isSaving {
                 ProgressView().controlSize(.small)
             }
-            ToolbarIconButton("text.aligncenter", help: "Focus mode (⌥⌘F)", isActive: model.focusMode) {
-                withAnimation(Motion.standard) { model.focusMode.toggle() }
+            ToolbarIconButton(model.previewMode ? "pencil" : "eye",
+                              help: model.previewMode ? "Edit (⌘⇧P)" : "Preview (⌘⇧P)",
+                              isActive: model.previewMode) {
+                withAnimation(Motion.standard) { model.previewMode.toggle() }
             }
-            .keyboardShortcut("f", modifiers: [.command, .option])
+            .keyboardShortcut("p", modifiers: [.command, .shift])
             ToolbarIconButton("square.and.arrow.down", help: "Save (⌘S)") {
                 Task { await model.save() }
             }

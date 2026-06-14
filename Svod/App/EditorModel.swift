@@ -23,6 +23,8 @@ public final class EditorModel: ObservableObject {
     @Published public var isSaving = false
     @Published public var errorMessage: String?
     @Published public var focusMode = false
+    /// Edit (CodeMirror source) vs Preview (rendered markdown) in the web editor.
+    @Published public var previewMode = true
     @Published public var dirty = false
 
     // Editor-feature state (added by Teammate 1; foundation surface above is intact).
