@@ -215,21 +215,30 @@ final class TableLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
         let isHeader = rowIndex == 0
         let row = t.rows[rowIndex]
         let bodyFont = self.bodyFont, headFont = self.headFont
-        let border = nsColor(ThemeColor.borderSubtle)
         let h = frag.height
+        let tableW = colW.reduce(0, +)
+        // Row background: header tint, zebra stripe on alternating data rows.
         if isHeader {
             nsColor(ThemeColor.surfaceRaised).setFill()
-            NSRect(x: frag.minX, y: frag.minY, width: colW.reduce(0, +), height: h).fill()
+            NSRect(x: frag.minX, y: frag.minY, width: tableW, height: h).fill()
+        } else if rowIndex % 2 == 0 {
+            nsColor(ThemeColor.surfaceHover).withAlphaComponent(0.35).setFill()
+            NSRect(x: frag.minX, y: frag.minY, width: tableW, height: h).fill()
         }
+        // Faint vertical column separators (no heavy per-cell grid).
+        let sep = nsColor(ThemeColor.borderSubtle)
+        sep.setStroke()
         var x = frag.minX
         for c in 0..<t.columns {
+            if c > 0 {
+                NSBezierPath.strokeLine(from: NSPoint(x: x, y: frag.minY), to: NSPoint(x: x, y: frag.maxY))
+            }
             let w = colW[c]
-            border.setStroke(); NSBezierPath(rect: NSRect(x: x, y: frag.minY, width: w, height: h)).stroke()
             let cell = c < row.count ? row[c] : MarkdownTable.Cell(display: "", target: nil)
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: isHeader ? headFont : bodyFont,
                 .foregroundColor: nsColor(isHeader ? ThemeColor.textPrimary
-                                          : (cell.target != nil ? ThemeColor.link : ThemeColor.textSecondary)),
+                                          : (cell.target != nil ? ThemeColor.link : ThemeColor.textPrimary)),
             ]
             let text = cell.display as NSString
             let sz = text.size(withAttributes: attrs)
@@ -241,6 +250,12 @@ final class TableLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
             }
             text.draw(at: NSPoint(x: tx, y: frag.minY + (h - sz.height) / 2), withAttributes: attrs)
             x += w
+        }
+        // Header gets a stronger underline to separate it from the body.
+        if isHeader {
+            nsColor(ThemeColor.borderStrong).setStroke()
+            NSBezierPath.strokeLine(from: NSPoint(x: frag.minX, y: frag.maxY - 0.5),
+                                    to: NSPoint(x: frag.minX + tableW, y: frag.maxY - 0.5))
         }
     }
 
