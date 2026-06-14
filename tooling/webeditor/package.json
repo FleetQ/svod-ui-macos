@@ -1,0 +1,26 @@
+{
+  "name": "svod-webeditor",
+  "private": true,
+  "version": "1.0.0",
+  "description": "CodeMirror 6 + markdown-it + mermaid editor bundle for the Svod macOS app",
+  "type": "module",
+  "scripts": {
+    "build": "esbuild editor.src.js --bundle --minify --format=iife --legal-comments=none --outfile=../../Svod/Resources/webeditor/editor.bundle.js"
+  },
+  "dependencies": {
+    "@codemirror/autocomplete": "^6.18.0",
+    "@codemirror/commands": "^6.6.0",
+    "@codemirror/lang-markdown": "^6.3.0",
+    "@codemirror/language": "^6.10.2",
+    "@codemirror/search": "^6.5.6",
+    "@codemirror/state": "^6.4.1",
+    "@codemirror/view": "^6.28.0",
+    "@lezer/highlight": "^1.2.1",
+    "highlight.js": "^11.10.0",
+    "markdown-it": "^14.1.0",
+    "mermaid": "^10.9.1"
+  },
+  "devDependencies": {
+    "esbuild": "^0.23.0"
+  }
+}

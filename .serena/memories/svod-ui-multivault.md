@@ -36,8 +36,47 @@ NB: the engine on :7517 was an OLD single-vault **v0.2.0** instance (vaultPath /
 - App (built Debug) repointed to :7619 via `defaults write dev.svod.Svod svod.settings.endpointPort -int 7619`; bundle id `dev.svod.Svod`; keys `svod.settings.endpointHost/Port`. Verified VISUALLY: connects ("Connected"), vault switcher shows Personal(default)/Work + Import item, switching Personal→Work re-scoped the whole app (sidebar tree + tags swapped), imported/ folder visible from the live import.
 
 ## SHIPPED (2026-06-13)
-- `feat/multivault` fast-forward-merged to **main** and PUSHED to origin `FleetQ/svod-ui-macos` (`86e2df9..f75fa98`); build green on main pre-push. Local branches `feat/settings` + `feat/multivault` deleted (merged). main == origin/main.
+- `feat/multivault` → **main** + PUSHED to origin `FleetQ/svod-ui-macos`. Subsequent commits (UI fixes + UI/UX-audit fixes, Serena memories, README) all merged to main + pushed; HEAD `673af51`. main == origin/main. All feature branches deleted; only `main` remains. No `develop`, no submodules — main IS the integration/prod branch. **Repo is now PUBLIC** (`FleetQ/svod-ui-macos`); README rewritten for the built public app and the old "personal / out-of-product-scope / unsupported" framing was REMOVED at the user's request (only the factual "separate repo, contract-decoupled, ADR-0002" note kept). License still TBD. Ship flow each time: branch → fix → build green → FF-merge to main → delete branch → push (user also has a `/git-sync-branches` skill).
+
+## POST-SHIP UI FIXES (2026-06-13) — SwiftUI gotchas worth remembering
+Three small fixes after user testing the live app (all on `fix/diff-responsive`, merged to main):
+1. **Responsive diff** (`DiffView.swift`): side-by-side used FIXED 380pt columns + `.fixedSize(horizontal:true)` text → never adapted; a new/added file left the empty "old" column 380pt wide, pushing the change off-screen. FIX: `GeometryReader` → columns flex to `(width-1)/2`, vertical-scroll only, text wraps (`.frame(maxWidth:.infinity, alignment:.leading)` instead of fixedSize); below `minSideBySideWidth = 680` auto-collapse to the unified single column (which also wraps now).
+2. **Import did nothing** (`VaultSwitcherView`): a `.sheet` attached to a Button **inside a `Menu`** NEVER presents on macOS (menu is a separate context, tears the button down on dismiss). FIX pattern: don't present sheets from inside a Menu/toolbar item — add `AppModel.importPresented` flag, menu/sidebar buttons just set it, and `RootView` owns the `.sheet(isPresented:$app.importPresented)` (same reliable path as the conflict sheet). `ImportView` got a Done button + `.cancelAction` Esc + `app.refreshActiveVault()` (bumps reloadEpoch) post-import so new files show.
+3. **Duplicate sidebar toggle** (`RootView`): `NavigationSplitView` ALREADY supplies a sidebar-toggle button + View▸Show/Hide Sidebar (⌃⌘S). Our extra `sidebar.left` button in the `.navigation` ToolbarItemGroup was a second one. FIX: removed ours, kept only `VaultSwitcherSlot` in that group. (`.inspector` does NOT auto-add a toggle, so the custom `sidebar.right` inspector button stays.)
+GENERAL LESSON: `.sheet`/`.popover` from toolbar-item or Menu-content views is unreliable on macOS — present from the main RootView via an AppModel flag.
+
+## ENV GOTCHA (verification)
+`screencapture` returns a BLACK frame when the session display is asleep/locked (worked earlier same session, then went black). UI automation via `osascript ... click at {x,y}` is FLAKY here — it intermittently triggers Stage Manager / focuses other apps (1Password) when a click lands outside the window. AX element clicks (`click button N of ...`) are more reliable than coordinate clicks but still hit menu/disclosure quirks. Don't rabbit-hole on visual verification; trust green build + sound pattern.
+
+## SESSION 2 (2026-06-13/14) — engine v1.0, GitHub backup, Sources, markdown+tables
+
+### Engine progression (~htdocs/svod, shipped same day; releases LAG main)
+v0.5.0 sync/backup ops aligned to UI wire shapes → v1.0.0 stable (native app-images macos-arm64/linux-x64/windows-x64, ~205MB **jpackage bundle w/ JRE** so onnx-local works) → v0.6.0 contract (`ImportRequest.followSymlinks` + NEW `sources` endpoints) → v1.0.1 + rc's (GraalVM native fixes, NOT features). **Features land on main commits BEFORE a release build** — to test newest, build from source (`gradlew run`) on alt port, or download the release app-image. The launchd :7517 engine was stale v0.2.0; I ran current from source on **:7619** and pointed the app there (Settings→Connection / `defaults write dev.svod.Svod svod.settings.endpointPort 7619`).
+
+### Sync/backup deploy + verify (PASSED live)
+Deployed v1.0.0 jpackage: `~/svod-engine-v1/SvodEngine.app/Contents/MacOS/SvodEngine <config>`. All 5 endpoints live (200, shapes == UI DTOs): GET /sync/config, PUT /settings/backup, POST /backup/now|sync/now|maintenance/reindex. Guards: inline `user:pass@` →422, unreachable remote →409 (not 500). `GET /vaults` items carry `sync` dot.
+
+### GitHub OAuth backup (`Svod/Features/Settings/GitHubBackup.swift`)
+One-click "Connect GitHub" in SyncBackup panel. **OAuth Device Flow**, public clientID **`Ov23liNkXS7CerjNmDa8`** (registered OAuth App "Svod", Device Flow enabled, NO client secret; homepage/callback can be the repo URL — unused by device flow). Flow: device code → browser authorize → poll token → ensure private `svod-backup-<vault>` repo (GitHub API) → store authed URL.
+**SECURITY (commit-review finding, FIXED):** originally `security add-generic-password -A` (Keychain) — flagged for secret-in-argv + over-broad `-A` ACL. Now writes the authed URL to `~/Library/Application Support/Svod/backup-<vault>.remote` **chmod 0600** and gives the engine a **`file:` ref** (git credential.store pattern). Raw token never crosses the loopback App API. Engine resolves remote via `Secrets.resolve` at push (env:/file:/keychain: refs). Private-repo backup = HTTPS token via a Secrets ref; **SSH not supported** (no jgit-ssh bundled). Backup pushes to `refs/svod/backup/<vault>`.
+
+### Sources UI (`Svod/Features/Settings/SourcesSettingsView.swift`) — Settings → Sources
+Re-syncable external sources (engine v0.6.0). DTOs `ExternalSource`, `RegisterSourceRequest`, `SourceSyncResult{created,updated,unchanged,conflicts,orphaned,deleted,skipped,error}` (lenient decode). Client: `listSources/registerSource/removeSource/syncSource/syncAllSources` (per-vault; LiveSvodClient `sendNoResult` for the 204 DELETE). external-wins-unless-locally-edited. **Chosen over blanket `followSymlinks`** — followSymlinks WORKS but on the user's vault materialized 7000+ files (project `docs`/.claude trees the symlinks point at). Sources = register only the dirs you want.
+
+### Markdown rendering overhaul (Editor)
+- **Proportional body font** (was monospace everywhere); mono only for code/inline-code/tables. Headings `systemFont`.
+- `[text](url)` styled+clickable (http→browser); `![alt](url)` styled; task lists `- [ ]`/`- [x]` (done=green+struck); `~~strikethrough~~`; aliased `[[a|b]]` shows alias (dims `a|`).
+- **Delete note/folder** via right-click context menu + confirmation. Engine requires `expectedRevision` for DELETE → read rev first, then delete (`trash()`). Folder = recursive soft-delete to `.trash/`.
+
+### TABLE GRID RENDERER (`Svod/Features/Editor/TableRenderer.swift`) — hard, many iterations
+Custom **`TableLayoutManager: NSLayoutManager`** renders markdown tables as an aligned grid WITHOUT touching source.
+- Highlighter tags each table source line `.svodTableLine` (TableLineInfo: table, blockId, blockRange, isFirstLine, **gridRow** [header=0, data 1.., separator=-1]). `MarkdownTable.parse` uses a **PIPE-AWARE split** (ignore `|` inside `[[ ]]`, inline code, `\|`) — naive split breaks `[[a|alias]]` cells. Per-cell `display`(alias) + `target`(svodwiki://|url).
+- LM **nulls raw table glyphs** (shouldGenerateGlyphs delegate, keep newlines) except the revealed block; draws each grid row at its OWN line fragment (drawRow into `frag.height`).
+- **AppKit GOTCHAS (each a fixed bug):** (a) reserving all height on the first line = one giant line fragment → scroll/overlap garbage; (b) `shouldSetLineFragmentRect` delegate height is NOT reliably honored → set row **height via PARAGRAPH STYLE `minimumLineHeight`** in the highlighter instead (survives because applyFocusDimming re-runs highlight last); separator stays collapsed by the delegate (height 0 works, editable when revealed); (c) wikilink `.underlineStyle` paints across cells even with null glyphs → STRIP underline/strikethrough on table ranges; (d) draw into ACTUAL `frag.height` (not a computed constant) so borders never bisect text.
+- Caret-aware reveal: block under caret shows raw editable (`updateTableReveal` on selection → `lm.setRevealed` + invalidate). Clickable cells: `HoverTextView.mouseDown` → `lm.link(atContainerPoint:)` → `openLink`.
+- Final styling: zebra rows, faint vertical column separators (no per-cell grid), header tint+underline, +14pt row air.
 
 ## OPEN (for user)
-- Engine harbormaster job `d_38b0c4cc0218` (v0.4.0 sync/backup, inbox `svod-ui-settings`) status still unrecalled.
-- Temp state left for exploration: v0.3.0 engine on :7619 + app pointed there. To revert: `defaults write dev.svod.Svod svod.settings.endpointPort -int 7517` (or Settings→Connection), kill the :7619 gradle process, rm `dist/config.local.multivault.json`. `~/Svod/{personal,work}` are real seeded vault git repos (leave or delete).
+- Engine: current is **v1.0.1** (released) but newest features (sources/followSymlinks) need a v0.6+ build. App is pointed at the from-source engine on **:7619**; to use normal setup, deploy v1.0.x to :7517 (replace launchd v0.2.0) or keep app on :7619 via Settings→Connection.
+- A public GitHub OAuth App "Svod" exists (clientID baked into the app).
+- `~/Svod/personal` is messy from import tests + the user's root import (`AGENTS.md` etc. at root, `obs-daily/`, `ext/contract/`). Offer to clean for a fresh real import.

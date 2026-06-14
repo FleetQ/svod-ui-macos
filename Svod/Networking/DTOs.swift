@@ -387,8 +387,9 @@ public struct ImportRequest: Codable, Hashable, Sendable {
     public var source: String            // local filesystem path to the Obsidian vault
     public var into: String?             // optional subfolder prefix within the target vault
     public var vault: String?            // target vault id; nil ⇒ default
-    public init(source: String, into: String? = nil, vault: String? = nil) {
-        self.source = source; self.into = into; self.vault = vault
+    public var followSymlinks: Bool      // contract 0.7.0: materialize symlinks (else skipped)
+    public init(source: String, into: String? = nil, vault: String? = nil, followSymlinks: Bool = false) {
+        self.source = source; self.into = into; self.vault = vault; self.followSymlinks = followSymlinks
     }
 }
 

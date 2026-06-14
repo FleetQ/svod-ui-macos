@@ -14,6 +14,7 @@ struct ImportView: View {
     @State private var busy = false
     @State private var error: String?
     @State private var chosenName: String?
+    @State private var followSymlinks = false
 
     private var targetVaultName: String { app.vault.activeVault?.name ?? "the default vault" }
 
@@ -28,6 +29,17 @@ struct ImportView: View {
                 .font(Typography.callout)
                 .foregroundStyle(ThemeColor.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
+
+            Toggle(isOn: $followSymlinks) {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Follow symlinks (copy linked files & folders)")
+                    Text("Off: symlinked notes are skipped. On: linked files and directories are copied in — useful for an Obsidian vault that symlinks notes from other projects.")
+                        .font(Typography.caption).foregroundStyle(ThemeColor.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .toggleStyle(.checkbox)
+            .disabled(busy)
 
             HStack(spacing: Spacing.sm) {
                 Button {
@@ -79,7 +91,8 @@ struct ImportView: View {
         busy = true; error = nil; result = nil
         defer { busy = false }
         do {
-            result = try await app.client.importVault(source: source, into: nil, vault: app.vault.activeVaultId)
+            result = try await app.client.importVault(source: source, into: nil,
+                                                      vault: app.vault.activeVaultId, followSymlinks: followSymlinks)
             app.refreshActiveVault()   // show the new files in the tree
         } catch let e as SvodClientError {
             error = e.errorDescription
