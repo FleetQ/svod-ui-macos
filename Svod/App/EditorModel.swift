@@ -63,7 +63,10 @@ public final class EditorModel: ObservableObject {
             self.draft = f.content
             suppressAutosave = false
             self.dirty = false
-            await loadSidecar(path: path)
+            // Sidecar (vault note list + this note's link resolution) is non-essential for
+            // display and can take seconds on link-heavy notes — load it off the critical
+            // path so the note opens immediately instead of blocking on /file/links.
+            Task { [weak self] in await self?.loadSidecar(path: path) }
         } catch let e as SvodClientError {
             if Task.isCancelled { return }   // superseded by a newer load — not a real error
             self.errorMessage = e.errorDescription
@@ -80,6 +83,7 @@ public final class EditorModel: ObservableObject {
             noteNames = Self.noteNames(in: root)
         }
         if let links = try? await client.fileLinks(path: path) {
+            guard app?.selectedPath == path else { return }   // superseded by a newer selection
             var map: [String: String?] = [:]
             for l in links.outlinks { map[l.target] = l.resolved }
             linkResolution = map
