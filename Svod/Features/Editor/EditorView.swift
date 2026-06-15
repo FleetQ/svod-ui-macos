@@ -64,6 +64,7 @@ struct EditorView: View {
             WebEditorView(
                 text: bodyBinding,
                 previewMode: model.previewMode,
+                focusMode: model.focusMode,
                 noteNames: model.noteNames,
                 onOpenLink: handleOpenLink
             )
@@ -120,6 +121,11 @@ private struct EditorToolbar: View {
             if model.isSaving {
                 ProgressView().controlSize(.small)
             }
+            ToolbarIconButton("text.aligncenter", help: "Focus mode (⌥⌘F)", isActive: model.focusMode) {
+                withAnimation(Motion.standard) { model.focusMode.toggle() }
+            }
+            .keyboardShortcut("f", modifiers: [.command, .option])
+            .disabled(model.previewMode)
             ToolbarIconButton(model.previewMode ? "pencil" : "eye",
                               help: model.previewMode ? "Edit (⌘⇧P)" : "Preview (⌘⇧P)",
                               isActive: model.previewMode) {

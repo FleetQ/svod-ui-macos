@@ -19,6 +19,7 @@ import WebKit
 struct WebEditorView: NSViewRepresentable {
     @Binding var text: String
     var previewMode: Bool
+    var focusMode: Bool
     var noteNames: [String]
     var onOpenLink: (String) -> Void
     var onOpenExternal: (URL) -> Void = { NSWorkspace.shared.open($0) }
@@ -59,6 +60,7 @@ struct WebEditorView: NSViewRepresentable {
         // Mirrors of what JS currently has, to avoid feedback loops / redundant pushes.
         private var jsDocText = ""
         private var jsPreview: Bool?
+        private var jsFocus: Bool?
         private var jsNoteNames: [String] = []
         private var configured = false
 
@@ -101,6 +103,10 @@ struct WebEditorView: NSViewRepresentable {
                 jsPreview = parent.previewMode
                 call("window.SvodEditor.setMode('\(parent.previewMode ? "preview" : "edit")')")
             }
+            if jsFocus != parent.focusMode {
+                jsFocus = parent.focusMode
+                call("window.SvodEditor.setFocusMode(\(parent.focusMode))")
+            }
             if jsNoteNames != parent.noteNames {
                 jsNoteNames = parent.noteNames
                 if let data = try? JSONSerialization.data(withJSONObject: parent.noteNames),
@@ -121,6 +127,8 @@ struct WebEditorView: NSViewRepresentable {
             }
             jsPreview = parent.previewMode
             call("window.SvodEditor.setMode('\(parent.previewMode ? "preview" : "edit")')")
+            jsFocus = parent.focusMode
+            call("window.SvodEditor.setFocusMode(\(parent.focusMode))")
         }
 
         private func configure() {

@@ -23,6 +23,9 @@ body { color: var(--text);
 
 #editor { height: 100%; }
 
+/* Focus mode: dim non-active lines */
+.cm-focus-dim { opacity: 0.38; transition: opacity .15s ease; }
+
 /* ── Preview ──────────────────────────────────────────────────────────── */
 #preview {
   max-width: var(--measure); margin: 0 auto; padding: 28px 28px 120px;
