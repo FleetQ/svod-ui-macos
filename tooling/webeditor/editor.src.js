@@ -53,6 +53,15 @@ function escapeHtml(s) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+// GFM tables split each row on `|`, which would tear a [[target|alias]] wikilink across
+// two cells. Swap the alias pipe to a private-use sentinel before parsing so the table
+// tokenizer ignores it; the wikilink inline rule restores it. (A `|` only ever appears
+// inside [[...]] as the alias separator.)
+const WL_PIPE = "";
+function protectWikilinkPipes(src) {
+  return src.replace(/\[\[[^\n\]]*\]\]/g, (m) => m.replace(/\|/g, WL_PIPE));
+}
+
 // Resolve a same-vault [[target]] against the known note names.
 function isResolved(target) {
   if (!target) return false;
@@ -70,9 +79,10 @@ md.inline.ruler.before("link", "wikilink", (state, silent) => {
   const inner = src.slice(start + 2, end);
   if (inner.indexOf("\n") >= 0) return false;
   if (!silent) {
-    const pipe = inner.indexOf("|");
-    const target = (pipe >= 0 ? inner.slice(0, pipe) : inner).trim();
-    const alias = (pipe >= 0 ? inner.slice(pipe + 1) : inner).trim();
+    const innerClean = inner.replace(//g, "|");   // restore alias pipes hidden from the table parser
+    const pipe = innerClean.indexOf("|");
+    const target = (pipe >= 0 ? innerClean.slice(0, pipe) : innerClean).trim();
+    const alias = (pipe >= 0 ? innerClean.slice(pipe + 1) : innerClean).trim();
     const resolved = isResolved(target);
     const open = state.push("link_open", "a", 1);
     open.attrSet("href", "#");
@@ -88,7 +98,7 @@ md.inline.ruler.before("link", "wikilink", (state, silent) => {
 function renderPreview() {
   const el = document.getElementById("preview");
   const text = view ? view.state.doc.toString() : "";
-  el.innerHTML = md.render(text);
+  el.innerHTML = md.render(protectWikilinkPipes(text));
   const nodes = el.querySelectorAll(".mermaid");
   if (nodes.length) {
     // "antiscript" strips <script>/JS event handlers from diagram labels (XSS-safe for
