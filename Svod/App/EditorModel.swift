@@ -30,6 +30,9 @@ public final class EditorModel: ObservableObject {
     // Editor-feature state (added by Teammate 1; foundation surface above is intact).
     /// Bare note names in the vault (for [[wikilink]] autocomplete), e.g. "architecture".
     @Published public var noteNames: [String] = []
+    /// Full note paths in the vault, for resolving wikilink targets to a path without
+    /// waiting on the (slow) /file/links call.
+    @Published public var notePaths: Set<String> = []
     /// Resolution of this note's outlinks: target → resolved path (nil == unresolved).
     @Published public var linkResolution: [String: String?] = [:]
 
@@ -81,6 +84,7 @@ public final class EditorModel: ObservableObject {
     private func loadSidecar(path: String) async {
         if let root = try? await client.tree() {
             noteNames = Self.noteNames(in: root)
+            notePaths = Self.notePaths(in: root)
         }
         if let links = try? await client.fileLinks(path: path) {
             guard app?.selectedPath == path else { return }   // superseded by a newer selection
@@ -98,11 +102,18 @@ public final class EditorModel: ObservableObject {
         return noteNames.contains { $0.caseInsensitiveCompare(t) == .orderedSame }
     }
 
-    /// Resolved path for a wikilink target, if known.
+    /// Resolved path for a wikilink target, if known. Prefers the engine's resolution,
+    /// then falls back to the vault tree — so links work before /file/links loads (slow
+    /// on link-heavy notes) and for links the engine reports unresolved but that exist.
     public func resolvedPath(for target: String) -> String? {
         let t = target.trimmingCharacters(in: .whitespaces)
-        if let entry = linkResolution[t], let p = entry { return p }
-        return nil
+        if let entry = linkResolution[t], let p = entry { return p }   // engine-resolved
+        guard !t.isEmpty else { return nil }
+        let candidate = t.hasSuffix(".md") ? t : t + ".md"
+        if notePaths.contains(candidate) { return candidate }          // path-qualified target
+        if notePaths.contains(t) { return t }
+        let base = (candidate as NSString).lastPathComponent             // bare name → any match
+        return notePaths.first { ($0 as NSString).lastPathComponent.caseInsensitiveCompare(base) == .orderedSame }
     }
 
     public func markDirty() { if !dirty { dirty = true } }
@@ -118,6 +129,16 @@ public final class EditorModel: ObservableObject {
         }
         walk(node)
         return out.sorted()
+    }
+
+    private static func notePaths(in node: TreeNode) -> Set<String> {
+        var out = Set<String>()
+        func walk(_ n: TreeNode) {
+            if n.type == .file { out.insert(n.path) }
+            n.children?.forEach(walk)
+        }
+        walk(node)
+        return out
     }
 
     public func save() async {
