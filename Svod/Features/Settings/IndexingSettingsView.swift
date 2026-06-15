@@ -83,6 +83,10 @@ struct IndexingSettingsView: View {
     @State private var unavailable = false
     @State private var busy = false
     @State private var statusMsg: String?
+    // Model picker — populated from the engine per provider; empty ⇒ manual entry.
+    @State private var availableModels: [String] = []
+    @State private var loadingModels = false
+    @State private var customModel = false     // user chose "Custom…" to type a model not in the list
 
     /// Whether a remote key file already exists (so the user need not re-paste to tweak the model).
     private var hasStoredKey: Bool { FileManager.default.fileExists(atPath: Self.keyFileURL().path) }
@@ -110,7 +114,11 @@ struct IndexingSettingsView: View {
         .task { await load() }
         .task(id: app.reloadEpoch) { guard app.reloadEpoch > 0 else { return }; await load() }
         .task { await pollStatus() }
+        .task(id: modelsKey) { await loadModels() }
     }
+
+    /// Reloads the model list when the provider, remote service, or endpoint changes.
+    private var modelsKey: String { "\(provider.rawValue)|\(remoteService.rawValue)|\(endpoint)" }
 
     // MARK: semantic index status + controls
     @ViewBuilder private var indexSection: some View {
@@ -202,7 +210,7 @@ struct IndexingSettingsView: View {
         .onChange(of: remoteService) { _, _ in applyServiceDefaults(); test = nil }
         if remoteService.isCustom {
             TextField("Endpoint", text: $endpoint, prompt: Text("https://your-pod.example/v1")).textContentType(.URL)
-            TextField("Model", text: $model, prompt: Text("embedding model id"))
+            modelField()
         }
         if useManualRef {
             TextField("API key reference", text: $apiKeyRef, prompt: Text("keychain:… / env:… / file:…"))
@@ -218,7 +226,7 @@ struct IndexingSettingsView: View {
     // Advanced — model override (hidden providers) + concurrency + manual ref escape hatch.
     @ViewBuilder private var advancedFields: some View {
         if provider == .onnx || provider == .ollama || (provider == .openai && !remoteService.isCustom) {
-            TextField("Model", text: $model, prompt: Text(defaultModel))
+            modelField()
         }
         Stepper("Concurrency: \(concurrency)", value: $concurrency, in: 1...16)
         Text(provider == .openai
@@ -229,6 +237,47 @@ struct IndexingSettingsView: View {
         if provider == .openai {
             Toggle("Use a Secrets reference instead of pasting a key", isOn: $useManualRef)
         }
+    }
+
+    // Model picker — a real dropdown of what the provider can serve, with a "Custom…"
+    // escape hatch. When the engine can't enumerate (older engine, remote with no key,
+    // Ollama unreachable) the list is empty and we fall back to a plain text field.
+    @ViewBuilder private func modelField() -> some View {
+        if availableModels.isEmpty {
+            TextField("Model", text: $model,
+                      prompt: Text(defaultModel.isEmpty ? "embedding model id" : defaultModel))
+        } else {
+            Picker("Model", selection: modelSelection) {
+                ForEach(availableModels, id: \.self) { Text($0).tag(Optional($0)) }
+                if !model.isEmpty && !availableModels.contains(where: { sameModel($0, model) }) {
+                    Text("\(model) (custom)").tag(Optional(model))
+                }
+                Divider()
+                Text("Custom…").tag(Optional<String>.none)
+            }
+            if customModel {
+                TextField("Custom model", text: $model,
+                          prompt: Text(defaultModel.isEmpty ? "embedding model id" : defaultModel))
+            }
+        }
+    }
+
+    /// Picker selection: a model id, or nil when "Custom…" is chosen (reveals the text field).
+    /// Maps the active model onto its list entry ignoring an Ollama `:latest` tag, so e.g.
+    /// a stored `bge-m3` selects the listed `bge-m3:latest` instead of showing as "(custom)".
+    private var modelSelection: Binding<String?> {
+        Binding(
+            get: { customModel ? nil : (availableModels.first { sameModel($0, model) } ?? model) },
+            set: { sel in
+                if let sel { model = sel; customModel = false } else { customModel = true }
+            }
+        )
+    }
+
+    /// Two model ids refer to the same model if they match ignoring a trailing `:latest` tag.
+    private func sameModel(_ a: String, _ b: String) -> Bool {
+        func base(_ s: String) -> String { s.hasSuffix(":latest") ? String(s.dropLast(7)) : s }
+        return base(a) == base(b)
     }
 
     @ViewBuilder private func testRow(_ t: EmbedderTestResult) -> some View {
@@ -276,6 +325,29 @@ struct IndexingSettingsView: View {
         if let raw = apiKey.trimmedOrNil { return try Self.storeEmbedKey(raw) }
         if hasStoredKey { return "file:\(Self.keyFileURL().path)" }   // reuse the stored key
         return nil
+    }
+
+    /// Key reference for *listing* remote models — reuses a stored/manual ref but never
+    /// writes the pasted key to disk just to enumerate (that happens only on Apply/Test).
+    private func listingKeyRef() -> String? {
+        guard provider == .openai else { return nil }
+        if useManualRef { return apiKeyRef.trimmedOrNil }
+        if hasStoredKey { return "file:\(Self.keyFileURL().path)" }
+        return nil
+    }
+
+    /// Ask the engine which models this provider/endpoint can serve. Any failure (older
+    /// engine, offline, can't enumerate) → empty list → the field degrades to manual entry.
+    private func loadModels() async {
+        guard !unavailable, provider != .none else { availableModels = []; customModel = false; return }
+        loadingModels = true; defer { loadingModels = false }
+        let req = EmbedderRequest(provider: provider.rawValue,
+                                  endpoint: (provider == .ollama || provider == .openai) ? endpoint.trimmedOrNil : nil,
+                                  apiKeyRef: listingKeyRef())
+        availableModels = ((try? await client.embedderModels(req, vault: vaultID)) ?? []).map(\.id)
+        // A model not in the list still shows via the picker's "(custom)" tag — no need to
+        // force manual mode; only an explicit "Custom…" pick sets customModel.
+        customModel = false
     }
 
     private func buildRequest(keyRef: String?) -> EmbedderRequest {

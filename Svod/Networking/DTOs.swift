@@ -328,6 +328,25 @@ public struct EmbedderTestResult: Codable, Hashable, Sendable {
     public var error: String?
 }
 
+/// A model the engine can offer for a given embedder spec (Ollama tag / onnx bundle /
+/// remote /v1/models id). `dimension` is filled only when cheaply known.
+public struct EmbedderModelOption: Codable, Hashable, Sendable, Identifiable {
+    public var id: String
+    public var dimension: Int?
+    public init(id: String, dimension: Int? = nil) { self.id = id; self.dimension = dimension }
+}
+
+/// Response of POST /embedder/models — the models a provider/endpoint can serve.
+/// An empty list means the provider couldn't be enumerated (unreachable, no key) —
+/// the UI falls back to manual model entry.
+public struct EmbedderModels: Codable, Hashable, Sendable {
+    public var provider: String
+    public var models: [EmbedderModelOption]
+    public init(provider: String, models: [EmbedderModelOption]) {
+        self.provider = provider; self.models = models
+    }
+}
+
 public struct Conflicts: Codable, Hashable, Sendable {
     public struct Item: Codable, Hashable, Sendable, Identifiable {
         public var path: String

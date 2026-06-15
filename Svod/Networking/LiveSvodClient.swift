@@ -219,6 +219,10 @@ public final class LiveSvodClient: SvodClient, @unchecked Sendable {
     public func testEmbedder(_ request: EmbedderRequest, vault: String?) async throws -> EmbedderTestResult {
         try await send("/api/v1/embedder/test", method: "POST", query: vaultQuery(vault), body: request)
     }
+    public func embedderModels(_ request: EmbedderRequest, vault: String?) async throws -> [EmbedderModelOption] {
+        let r: EmbedderModels = try await send("/api/v1/embedder/models", method: "POST", query: vaultQuery(vault), body: request)
+        return r.models
+    }
     @discardableResult
     public func reembed(vault: String?) async throws -> IndexStatus {
         try await sendNoBody("/api/v1/index/reembed", method: "POST", query: vaultQuery(vault))

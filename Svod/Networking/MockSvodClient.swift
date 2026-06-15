@@ -278,6 +278,17 @@ public final class MockSvodClient: SvodClient, @unchecked Sendable {
         let dim = request.provider == "none" ? 0 : (request.provider == "remote-openai" ? 1536 : 384)
         return EmbedderTestResult(ok: true, dimension: dim, latencyMs: 42, error: nil)
     }
+    public func embedderModels(_ request: EmbedderRequest, vault: String?) async throws -> [EmbedderModelOption] {
+        try await gate()
+        let ids: [String]
+        switch request.provider {
+        case "local-ollama":  ids = ["bge-m3", "nomic-embed-text", "mxbai-embed-large"]
+        case "local-onnx":    ids = ["multilingual-e5-small", "bge-small-en-v1.5"]
+        case "remote-openai": ids = (request.apiKeyRef ?? "").isEmpty ? [] : ["text-embedding-3-small", "text-embedding-3-large"]
+        default:              ids = []
+        }
+        return ids.map { EmbedderModelOption(id: $0) }
+    }
     @discardableResult
     public func reembed(vault: String?) async throws -> IndexStatus { try await gate(); return try await indexStatus() }
     @discardableResult

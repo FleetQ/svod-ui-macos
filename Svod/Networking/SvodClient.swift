@@ -104,6 +104,10 @@ public protocol SvodClient: AnyObject, Sendable {
     func setEmbedder(_ request: EmbedderRequest, vault: String?) async throws -> EmbedderInfo
     /// Probe an embedder spec (embed a test string) without persisting it.
     func testEmbedder(_ request: EmbedderRequest, vault: String?) async throws -> EmbedderTestResult
+    /// List the models a provider/endpoint can serve (Ollama tags / onnx bundles /
+    /// remote /v1/models). Returns [] when the provider can't be enumerated; throws
+    /// `.notImplemented` (501) / not-found (404) on older engines — UI falls back to manual entry.
+    func embedderModels(_ request: EmbedderRequest, vault: String?) async throws -> [EmbedderModelOption]
     /// Re-embed the whole vault in the background (keyword search stays available).
     @discardableResult
     func reembed(vault: String?) async throws -> IndexStatus
