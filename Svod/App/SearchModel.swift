@@ -33,10 +33,13 @@ public final class SearchModel: ObservableObject {
     /// of typing into one request. Cancellation is cooperative — a newer call
     /// supersedes the in-flight wait via `debounceTask`.
     private var debounceTask: Task<Void, Never>?
+    /// A tag or path filter alone is enough to search (browse by tag), even with no query.
+    private var hasActiveFilters: Bool { !filterTags.isEmpty || (pathPrefix?.isEmpty == false) }
+
     public func search(debounce: Duration = .milliseconds(180)) {
         debounceTask?.cancel()
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !q.isEmpty else {
+        guard !q.isEmpty || hasActiveFilters else {
             isSearching = false; results = []; hasSearched = false; errorMessage = nil; return
         }
         debounceTask = Task { [weak self] in
@@ -48,7 +51,7 @@ public final class SearchModel: ObservableObject {
 
     public func runSearch() async {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !q.isEmpty else { results = []; hasSearched = false; return }
+        guard !q.isEmpty || hasActiveFilters else { results = []; hasSearched = false; return }
         isSearching = true; errorMessage = nil
         defer { isSearching = false; hasSearched = true }
         let limit = app?.settings.searchResultLimit ?? 20
@@ -68,13 +71,31 @@ public final class SearchModel: ObservableObject {
                 r = try await client.search(query: q, mode: mode, limit: limit,
                                             tags: filterTags, pathPrefix: pathPrefix)
             }
-            self.results = r.hits
+            // The engine returns per-chunk/per-heading hits, so a note can appear many
+            // times (very visible when browsing by tag). Collapse to one row per note,
+            // keeping the best-scoring hit.
+            self.results = Self.collapsedByNote(r.hits)
             self.selectedIndex = 0
         } catch let e as SvodClientError {
             self.errorMessage = e.errorDescription; self.results = []
         } catch {
             self.errorMessage = error.localizedDescription; self.results = []
         }
+    }
+
+    /// One row per note (best-scoring hit), preserving the engine's relevance order.
+    private static func collapsedByNote(_ hits: [SearchHit]) -> [SearchHit] {
+        var best: [String: SearchHit] = [:]
+        var order: [String] = []
+        for h in hits {
+            let key = (h.vault ?? "") + ":" + h.path
+            if let cur = best[key] {
+                if h.score > cur.score { best[key] = h }
+            } else {
+                best[key] = h; order.append(key)
+            }
+        }
+        return order.compactMap { best[$0] }
     }
 
     /// Load the tag vocabulary once; failures are silent (chips just don't appear).

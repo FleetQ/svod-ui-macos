@@ -133,8 +133,10 @@ struct SidebarView: View {
 
     // MARK: actions
     private func selectTag(_ tag: String) {
+        app.search.query = ""
         app.search.filterTags = [tag]
         app.commandPaletteVisible = true
+        app.search.search()
     }
 
     private func runSavedSearch(_ saved: SidebarModel.SavedSearch) {
