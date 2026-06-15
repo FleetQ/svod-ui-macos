@@ -27,6 +27,16 @@ struct SyncBackupSettingsView: View {
         return (busyLabel ?? "Working") + "…" + t + hint
     }
 
+    /// Multi-host sync needs at least one peer; without one there's nothing to sync
+    /// (this vault still backs up to GitHub).
+    private var syncUnavailable: Bool { config?.syncPeers.isEmpty ?? true }
+
+    private func syncMessage(_ a: SyncAck) -> String {
+        let n = a.conflicts ?? 0
+        if a.ok { return n > 0 ? "Synced · \(n) conflict\(n == 1 ? "" : "s")" : "Synced" }
+        return n > 0 ? "Sync left \(n) conflict\(n == 1 ? "" : "s")" : "Nothing to sync — no peers configured"
+    }
+
     private var client: SvodClient { app.client }
     private var vaultID: String? { app.vault.activeVaultId }
 
@@ -47,7 +57,11 @@ struct SyncBackupSettingsView: View {
                         Button("Reindex") { Task { await run("Reindexing") { try await client.reindex(vault: vaultID).started ? "Reindex started" : "Reindex queued" } } }
                         Button("Back up now") { Task { await run("Backing up") { let a = try await client.backupNow(vault: vaultID); return a.ok ? "Backed up\(a.head.map { " · \($0.prefix(8))" } ?? "")" : "Backup failed" } } }
                             .disabled((config?.backupRemote ?? "").isEmpty)
-                        Button("Sync now") { Task { await run("Syncing") { let a = try await client.syncNow(vault: vaultID); return a.ok ? "Synced" : "Sync failed" } } }
+                        Button("Sync now") { Task { await run("Syncing") { let a = try await client.syncNow(vault: vaultID); return syncMessage(a) } } }
+                            .disabled(syncUnavailable)
+                            .help(syncUnavailable
+                                  ? "Multi-host sync isn’t set up (no peers). This vault backs up to GitHub instead."
+                                  : "Pull and push changes with your other hosts.")
                     }
                     .disabled(busy)
                     if busy {
@@ -101,6 +115,9 @@ struct SyncBackupSettingsView: View {
             if let remote = config?.backupRemote, !remote.isEmpty {
                 Label("Backing up to \(friendly(remote))", systemImage: "checkmark.seal.fill")
                     .font(Typography.callout).foregroundStyle(ThemeColor.sync)
+                Text("Snapshots are pushed to a git ref (refs/svod/backup/\(vaultID ?? "default")) — safe and restorable, but GitHub’s web view won’t list them (it shows only branches/tags). Verify with `git ls-remote`.")
+                    .font(Typography.caption).foregroundStyle(ThemeColor.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
                 Button("Reconnect / change account") { Task { await connectGitHub() } }
             } else {
                 Text("Back up this vault to a private GitHub repository.")
