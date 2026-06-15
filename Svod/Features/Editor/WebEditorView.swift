@@ -35,7 +35,11 @@ struct WebEditorView: NSViewRepresentable {
         let wv = WKWebView(frame: .zero, configuration: cfg)
         wv.navigationDelegate = context.coordinator
         wv.allowsMagnification = false
-        wv.underPageBackgroundColor = nsColor(ThemeColor.editorSurface)  // no white flash
+        wv.underPageBackgroundColor = nsColor(ThemeColor.editorSurface)
+        // Make the web view transparent so that while editor.html loads (before its dark
+        // CSS paints) the dark SwiftUI surface behind shows through instead of the default
+        // white WKWebView backing — kills the white flash on note open.
+        wv.setValue(false, forKey: "drawsBackground")
         context.coordinator.webView = wv
 
         let html = Bundle.main.url(forResource: "editor", withExtension: "html", subdirectory: "webeditor")

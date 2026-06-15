@@ -170,6 +170,7 @@ private struct TreeNodeRow: View {
     let app: AppModel
 
     @FocusState private var focused: Bool
+    @State private var hovering = false
     @State private var confirmingDelete = false
     @State private var deleteError: String?
 
@@ -222,6 +223,7 @@ private struct TreeNodeRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .onHover { hovering = $0 }
         .focusable(true)
         .focused($focused)
         .focusEffectDisabled()
@@ -339,8 +341,11 @@ private struct TreeNodeRow: View {
     }
 
     private var rowBackground: Color {
+        // Only the open note stays highlighted; the pointer hover is transient. (Driving
+        // this off per-row @FocusState left every clicked row stuck highlighted, since
+        // button focus isn't cleared exclusively across the recursive tree.)
         if isSelected { return ThemeColor.surfaceSelected }
-        if focused { return ThemeColor.surfaceHover }
+        if hovering { return ThemeColor.surfaceHover }
         return .clear
     }
 

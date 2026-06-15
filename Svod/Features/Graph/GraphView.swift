@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 // ════════════════════════════════════════════════════════════════════════
 // OWNED BY TEAMMATE 3 — Graph View (Features/Graph/)
@@ -97,6 +98,22 @@ private struct GraphCanvasContainer: View {
     /// Index of the keyboard-focused node (drives the focus ring + ⏎ open).
     @State private var keyboardFocus: Int = 0
     @FocusState private var canvasFocused: Bool
+    @State private var scrollMonitor: Any?
+
+    /// Mouse scroll-wheel → zoom. SwiftUI has no scroll-wheel modifier on macOS, so we
+    /// use a local NSEvent monitor, gated on `scene.pointerInside` so it only acts while
+    /// the cursor is over the graph (not when scrolling the sidebar/inspector).
+    private func installScrollMonitor() {
+        guard scrollMonitor == nil else { return }
+        scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak scene] event in
+            guard let scene, scene.pointerInside else { return event }
+            scene.scrollZoom(deltaY: event.scrollingDeltaY, precise: event.hasPreciseScrollingDeltas)
+            return nil   // consume so nothing else also scrolls
+        }
+    }
+    private func removeScrollMonitor() {
+        if let m = scrollMonitor { NSEvent.removeMonitor(m); scrollMonitor = nil }
+    }
 
     init(model: GraphModel, graph: Graph, reduceMotion: Bool) {
         self.model = model
@@ -117,8 +134,8 @@ private struct GraphCanvasContainer: View {
             .gesture(magnifyGesture)
             .onContinuousHover { phase in
                 switch phase {
-                case .active(let p): updateHover(at: p, center: center)
-                case .ended: model.hoveredNodeID = nil
+                case .active(let p): scene.pointerInside = true; updateHover(at: p, center: center)
+                case .ended: scene.pointerInside = false; model.hoveredNodeID = nil
                 }
             }
             .onTapGesture { p in handleTap(at: p, center: center) }
@@ -133,8 +150,8 @@ private struct GraphCanvasContainer: View {
             .accessibilityAdjustableAction { cycle($0) }
             .accessibilityAction(named: "Open note") { openFocused() }
             .overlay(alignment: .bottomTrailing) { zoomControls }
-            .onAppear { scene.start(); canvasFocused = true }
-            .onDisappear { scene.stop() }
+            .onAppear { scene.start(); canvasFocused = true; installScrollMonitor() }
+            .onDisappear { scene.stop(); removeScrollMonitor() }
             // Re-center the local view whenever the open note changes.
             .onChange(of: app.selectedPath) { _, _ in if model.scope == .local { keyboardFocus = 0 } }
         }
@@ -142,8 +159,17 @@ private struct GraphCanvasContainer: View {
 
     // MARK: drawing — edges first (under), then nodes, then labels.
     private func draw(_ ctx: GraphicsContext, size: CGSize, center: CGPoint) {
+        scene.viewCenter = center   // for cursor-anchored scroll zoom
         let z = scene.zoom
         func screen(_ p: CGPoint) -> CGPoint { CGPoint(x: center.x + p.x * z, y: center.y + p.y * z) }
+        // Viewport culling: skip anything off-screen. When zoomed in this drops most of
+        // the graph (and its expensive per-node labels) from each redraw, so zoom/pan stay
+        // smooth on a large vault.
+        let cullMargin: CGFloat = 48
+        func onScreen(_ sp: CGPoint) -> Bool {
+            sp.x > -cullMargin && sp.x < size.width + cullMargin &&
+            sp.y > -cullMargin && sp.y < size.height + cullMargin
+        }
 
         let hovered = model.hoveredNodeID
         let neighbors = hovered.map { neighborhood(of: $0) }
@@ -153,9 +179,11 @@ private struct GraphCanvasContainer: View {
         for e in scene.graph.edges {
             guard let a = scene.layout.position(of: e.source),
                   let b = scene.layout.position(of: e.target) else { continue }
+            let sa = screen(a), sb = screen(b)
+            if !onScreen(sa) && !onScreen(sb) { continue }
             let lit = neighbors?.contains(e.source) == true && neighbors?.contains(e.target) == true
             var path = Path()
-            path.move(to: screen(a)); path.addLine(to: screen(b))
+            path.move(to: sa); path.addLine(to: sb)
             let color = lit ? ThemeColor.borderStrong : ThemeColor.separator
             ctx.stroke(path, with: .color(color.opacity(dimmed && !lit ? 0.35 : 1)), lineWidth: lit ? 1.4 : 0.8)
         }
@@ -164,16 +192,18 @@ private struct GraphCanvasContainer: View {
         for pin in scene.unresolvedPoints {
             guard let s = scene.layout.position(of: pin.source),
                   let p = scene.position(of: pin) else { continue }
+            let ss = screen(s), sp = screen(p)
+            if !onScreen(ss) && !onScreen(sp) { continue }
             let lit = neighbors?.contains(pin.source) == true
             var path = Path()
-            path.move(to: screen(s)); path.addLine(to: screen(p))
+            path.move(to: ss); path.addLine(to: sp)
             ctx.stroke(path, with: .color(ThemeColor.linkUnresolved.opacity(dimmed && !lit ? 0.3 : 0.7)),
                        style: StrokeStyle(lineWidth: 0.8, dash: [3, 3]))
             let r: CGFloat = 4 * z
-            let rect = CGRect(x: screen(p).x - r, y: screen(p).y - r, width: r * 2, height: r * 2)
+            let rect = CGRect(x: sp.x - r, y: sp.y - r, width: r * 2, height: r * 2)
             ctx.stroke(Circle().path(in: rect),
                        with: .color(ThemeColor.linkUnresolved.opacity(dimmed && !lit ? 0.4 : 0.95)), lineWidth: 1.2)
-            if z > 1.3 || lit { drawLabel(ctx, pin.label, at: screen(p), z: z, color: ThemeColor.linkUnresolved, dim: dimmed && !lit) }
+            if z > 1.3 || lit { drawLabel(ctx, pin.label, at: sp, z: z, color: ThemeColor.linkUnresolved, dim: dimmed && !lit) }
         }
 
         // Nodes.
@@ -182,15 +212,19 @@ private struct GraphCanvasContainer: View {
             let pos = CGPoint(x: scene.layout.px[i], y: scene.layout.py[i])
             let r = scene.radius(at: i) * z
             let sp = screen(pos)
+            if !onScreen(sp) { continue }
             let rect = CGRect(x: sp.x - r, y: sp.y - r, width: r * 2, height: r * 2)
 
             let isFocus = id == model.focusPath
             let isHovered = id == hovered
             let isNeighbor = neighbors?.contains(id) == true
+            let isOrphan = scene.layout.degree[i] == 0   // unlinked note → dim, static halo
             let lit = !dimmed || isNeighbor
             let fill: Color = isFocus ? ThemeColor.accent
+                : isOrphan ? ThemeColor.textTertiary
                 : (lit ? ThemeColor.accentMuted : ThemeColor.textTertiary)
-            ctx.fill(Circle().path(in: rect), with: .color(fill.opacity(lit ? 1 : 0.4)))
+            let fillOpacity = isOrphan ? (lit ? 0.5 : 0.28) : (lit ? 1 : 0.4)
+            ctx.fill(Circle().path(in: rect), with: .color(fill.opacity(fillOpacity)))
 
             if isHovered || (i == keyboardFocus && canvasFocused) {
                 let ring = rect.insetBy(dx: -3, dy: -3)
@@ -200,8 +234,9 @@ private struct GraphCanvasContainer: View {
                 ctx.stroke(Circle().path(in: ring), with: .color(ThemeColor.accent.opacity(0.5)), lineWidth: 1)
             }
 
-            // Labels: on hover/neighborhood, on the focus note, or when zoomed in.
-            if isHovered || isNeighbor || isFocus || z > 1.4 {
+            // Labels: on hover/neighborhood, on the focus note, or when zoomed in — but
+            // never for orphans in bulk (they're the majority; labeling them tanks redraw).
+            if isHovered || isNeighbor || isFocus || (z > 1.4 && !isOrphan) {
                 drawLabel(ctx, Self.label(for: id), at: CGPoint(x: sp.x, y: sp.y + r + 8),
                           z: z, color: lit ? ThemeColor.textSecondary : ThemeColor.textTertiary, dim: !lit)
             }
@@ -232,6 +267,7 @@ private struct GraphCanvasContainer: View {
     }
 
     private func updateHover(at p: CGPoint, center: CGPoint) {
+        scene.pointer = p   // for cursor-anchored scroll zoom
         let id = nodeHit(at: p, center: center).map { scene.layout.ids[$0] }
         if id != model.hoveredNodeID { model.hoveredNodeID = id }
     }

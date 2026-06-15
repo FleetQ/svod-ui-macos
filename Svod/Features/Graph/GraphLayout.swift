@@ -21,7 +21,7 @@ import Foundation
 // caller freezes the redraw loop (and Reduce Motion freezes it immediately,
 // after pre-settling, so the layout is static).
 
-struct GraphLayout {
+struct GraphLayout: Sendable {
 
     // Stable identity / metadata, indexed 0..<count. Parallel arrays (struct of
     // arrays) keep the integrator branch-free and cache-friendly.
@@ -40,6 +40,11 @@ struct GraphLayout {
     private var edgeB: [Int]
 
     var count: Int { ids.count }
+    /// Number of leading nodes that participate in the physics (degree ≥ 1). Orphans
+    /// (degree 0) are stored after these with static peripheral positions and are never
+    /// simulated — they're the bulk of a real vault and would otherwise dominate the
+    /// O(n²) cost and clutter the layout.
+    private(set) var simulatedCount: Int = 0
 
     // MARK: tunables (in layout-space points, applied before view zoom)
     private let repulsion: CGFloat = 9_000     // node-node separation strength
@@ -49,22 +54,50 @@ struct GraphLayout {
     private let damping: CGFloat = 0.86        // velocity retained per step
     private let maxStep: CGFloat = 28          // clamp per-step displacement
 
+    // Global cooling (d3-style). Per-step displacement is scaled by `alpha`, which
+    // decays geometrically toward `alphaMin`. This guarantees the sim settles even in
+    // a large/dense graph where force-balance alone never reaches a low-energy rest
+    // state (overlap impulses keep injecting motion). Re-heat on user interaction.
+    let alphaMin: CGFloat = 0.004
+    private let alphaDecay: CGFloat = 0.0225   // ~300 steps from 1 → alphaMin
+    private(set) var alpha: CGFloat = 1
+    mutating func reheat() { alpha = 1 }
+
     /// Build topology from a graph. Only resolved edges (both endpoints are real
     /// nodes) participate in the physics; unresolved targets are laid out by the
     /// view relative to their single source, not simulated.
     init(graph: Graph) {
         let nodes = graph.nodes
-        var ids = [String](); ids.reserveCapacity(nodes.count)
-        var index = [String: Int](minimumCapacity: nodes.count)
-        for (i, n) in nodes.enumerated() { ids.append(n.id); index[n.id] = i }
+        // Pass 1 — tally degree in original order.
+        var orig = [String: Int](minimumCapacity: nodes.count)
+        for (i, n) in nodes.enumerated() { orig[n.id] = i }
+        var deg0 = [Int](repeating: 0, count: nodes.count)
+        for e in graph.edges {
+            guard let a = orig[e.source], let b = orig[e.target], a != b else { continue }
+            deg0[a] += 1; deg0[b] += 1
+        }
 
-        var degree = [Int](repeating: 0, count: nodes.count)
+        // Partition: connected nodes (degree ≥ 1) first, orphans (degree 0) last,
+        // preserving original order within each group. Only the connected prefix is
+        // simulated; orphans get a static halo.
+        var order = [Int](); order.reserveCapacity(nodes.count)
+        for i in 0..<nodes.count where deg0[i] > 0 { order.append(i) }
+        let simCount = order.count
+        for i in 0..<nodes.count where deg0[i] == 0 { order.append(i) }
+
+        var ids = [String](); ids.reserveCapacity(nodes.count)
+        var degree = [Int](); degree.reserveCapacity(nodes.count)
+        var index = [String: Int](minimumCapacity: nodes.count)
+        for (newI, oldI) in order.enumerated() {
+            let id = nodes[oldI].id
+            ids.append(id); degree.append(deg0[oldI]); index[id] = newI
+        }
+
         var edgeA = [Int](); var edgeB = [Int]()
         edgeA.reserveCapacity(graph.edges.count); edgeB.reserveCapacity(graph.edges.count)
         for e in graph.edges {
             guard let a = index[e.source], let b = index[e.target], a != b else { continue }
-            edgeA.append(a); edgeB.append(b)
-            degree[a] += 1; degree[b] += 1
+            edgeA.append(a); edgeB.append(b)   // both endpoints have degree ≥ 1 ⇒ a,b < simCount
         }
 
         self.ids = ids
@@ -72,17 +105,25 @@ struct GraphLayout {
         self.degree = degree
         self.edgeA = edgeA
         self.edgeB = edgeB
+        self.simulatedCount = simCount
 
-        // Seed on a deterministic phyllotaxis spiral so successive launches and
-        // previews look identical and the sim starts from a sane, spread layout.
+        // Connected nodes: a tight phyllotaxis spiral the physics relaxes. Orphans: a
+        // wider, static spiral beyond the connected core (never simulated). Deterministic
+        // so launches/previews look identical.
         let golden = CGFloat.pi * (3 - (5 as CGFloat).squareRoot())
         var px = [CGFloat](repeating: 0, count: nodes.count)
         var py = [CGFloat](repeating: 0, count: nodes.count)
-        for i in 0..<nodes.count {
+        for i in 0..<simCount {
             let r = 14 * (CGFloat(i) + 1).squareRoot()
             let a = CGFloat(i) * golden
-            px[i] = r * cos(a)
-            py[i] = r * sin(a)
+            px[i] = r * cos(a); py[i] = r * sin(a)
+        }
+        let haloBase = 80 + 30 * CGFloat(simCount).squareRoot()
+        for j in simCount..<nodes.count {
+            let k = j - simCount
+            let r = haloBase + 22 * (CGFloat(k) + 1).squareRoot()
+            let a = CGFloat(k) * golden
+            px[j] = r * cos(a); py[j] = r * sin(a)
         }
         self.px = px
         self.py = py
@@ -101,10 +142,10 @@ struct GraphLayout {
     /// can decide when the layout has settled. Allocation-free.
     @discardableResult
     mutating func step() -> CGFloat {
-        let n = ids.count
+        let n = simulatedCount          // only connected nodes participate; orphans stay put
         guard n > 0 else { return 0 }
 
-        // Repulsion — O(n²). Symmetric, so accumulate both sides per pair.
+        // Repulsion — O(n²) over the connected core only. Symmetric, accumulate per pair.
         var i = 0
         while i < n {
             var fx: CGFloat = 0, fy: CGFloat = 0
@@ -151,17 +192,20 @@ struct GraphLayout {
             var sx = vx[i], sy = vy[i]
             if sx > maxStep { sx = maxStep } else if sx < -maxStep { sx = -maxStep }
             if sy > maxStep { sy = maxStep } else if sy < -maxStep { sy = -maxStep }
+            sx *= alpha; sy *= alpha          // cool: motion shrinks toward zero as alpha decays
             px[i] += sx
             py[i] += sy
             energy += sx * sx + sy * sy
             i += 1
         }
+        if alpha > alphaMin { alpha -= alpha * alphaDecay } else { alpha = alphaMin }
         return energy
     }
 
     /// Run the sim forward without rendering — used to pre-settle a static layout
     /// (Reduce Motion) or to warm-start before the first frame.
-    mutating func settle(maxIterations: Int = 320, energyFloor: CGFloat = 0.6) {
-        for _ in 0..<maxIterations where step() > energyFloor {}
+    mutating func settle(maxIterations: Int = 400) {
+        var k = 0
+        while k < maxIterations && alpha > alphaMin { step(); k += 1 }
     }
 }
