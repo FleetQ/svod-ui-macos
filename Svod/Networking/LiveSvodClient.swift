@@ -21,7 +21,11 @@ public final class LiveSvodClient: SvodClient, @unchecked Sendable {
             self.session = session
         } else {
             let cfg = URLSessionConfiguration.ephemeral
-            cfg.timeoutIntervalForRequest = 15
+            // 30s base (cold /file/links can take ~10s); engine-down is detected instantly
+            // via connection-refused on loopback, so a longer idle timeout doesn't slow that.
+            // Long git ops (backup/sync/import/reindex) override this per-request (see send/sendNoBody).
+            cfg.timeoutIntervalForRequest = 30
+            cfg.timeoutIntervalForResource = 600
             cfg.waitsForConnectivity = false
             cfg.requestCachePolicy = .reloadIgnoringLocalCacheData
             self.session = URLSession(configuration: cfg)
@@ -142,7 +146,8 @@ public final class LiveSvodClient: SvodClient, @unchecked Sendable {
     @discardableResult
     public func importVault(source: String, into: String?, vault: String?, followSymlinks: Bool) async throws -> ImportResult {
         try await send("/api/v1/import", method: "POST",
-                       body: ImportRequest(source: source, into: into, vault: vault, followSymlinks: followSymlinks))
+                       body: ImportRequest(source: source, into: into, vault: vault, followSymlinks: followSymlinks),
+                       timeout: 180)
     }
 
     // MARK: external sources (per-vault)
@@ -164,12 +169,12 @@ public final class LiveSvodClient: SvodClient, @unchecked Sendable {
     @discardableResult
     public func syncSource(id: String, vault: String?) async throws -> SourceSyncResult {
         let enc = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
-        return try await sendNoBody("/api/v1/sources/\(enc)/sync", method: "POST", query: vaulted())
+        return try await sendNoBody("/api/v1/sources/\(enc)/sync", method: "POST", query: vaulted(), timeout: 180)
     }
 
     @discardableResult
     public func syncAllSources(vault: String?) async throws -> [SourceSyncResult] {
-        try await sendNoBody("/api/v1/sources/sync", method: "POST", query: vaulted())
+        try await sendNoBody("/api/v1/sources/sync", method: "POST", query: vaulted(), timeout: 180)
     }
 
     // MARK: meta
@@ -200,15 +205,15 @@ public final class LiveSvodClient: SvodClient, @unchecked Sendable {
     }
     @discardableResult
     public func reindex(vault: String?) async throws -> MaintenanceAck {
-        try await sendNoBody("/api/v1/maintenance/reindex", method: "POST", query: vaultQuery(vault))
+        try await sendNoBody("/api/v1/maintenance/reindex", method: "POST", query: vaultQuery(vault), timeout: 180)
     }
     @discardableResult
     public func backupNow(vault: String?) async throws -> BackupAck {
-        try await sendNoBody("/api/v1/backup/now", method: "POST", query: vaultQuery(vault))
+        try await sendNoBody("/api/v1/backup/now", method: "POST", query: vaultQuery(vault), timeout: 180)
     }
     @discardableResult
     public func syncNow(vault: String?) async throws -> SyncAck {
-        try await sendNoBody("/api/v1/sync/now", method: "POST", query: vaultQuery(vault))
+        try await sendNoBody("/api/v1/sync/now", method: "POST", query: vaultQuery(vault), timeout: 180)
     }
 
     // MARK: embeddings & indexing (contract 0.8.0)
@@ -291,17 +296,21 @@ public final class LiveSvodClient: SvodClient, @unchecked Sendable {
     }
 
     private func send<T: Decodable, B: Encodable>(_ path: String, method: String,
-                                                  query: [URLQueryItem] = [], body: B) async throws -> T {
+                                                  query: [URLQueryItem] = [], body: B,
+                                                  timeout: TimeInterval? = nil) async throws -> T {
         var req = URLRequest(url: makeURL(path, query: query))
         req.httpMethod = method
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try encoder.encode(body)
+        if let timeout { req.timeoutInterval = timeout }
         return try await perform(req)
     }
 
-    private func sendNoBody<T: Decodable>(_ path: String, method: String, query: [URLQueryItem] = []) async throws -> T {
+    private func sendNoBody<T: Decodable>(_ path: String, method: String,
+                                          query: [URLQueryItem] = [], timeout: TimeInterval? = nil) async throws -> T {
         var req = URLRequest(url: makeURL(path, query: query))
         req.httpMethod = method
+        if let timeout { req.timeoutInterval = timeout }
         return try await perform(req)
     }
 

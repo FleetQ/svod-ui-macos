@@ -18,6 +18,14 @@ struct SyncBackupSettingsView: View {
     @State private var showAdvanced = false
     @State private var status: String?
     @State private var busy = false
+    @State private var busyLabel: String?
+    @State private var elapsed = 0
+
+    private var progressText: String {
+        let t = elapsed > 0 ? " · \(elapsed)s" : ""
+        let hint = elapsed >= 6 ? " — large vaults or the first push can take a while" : ""
+        return (busyLabel ?? "Working") + "…" + t + hint
+    }
 
     private var client: SvodClient { app.client }
     private var vaultID: String? { app.vault.activeVaultId }
@@ -36,13 +44,18 @@ struct SyncBackupSettingsView: View {
             if !configUnavailable {
                 Section("Actions") {
                     HStack(spacing: Spacing.sm) {
-                        Button("Reindex") { Task { await run { try await client.reindex(vault: vaultID).started ? "Reindex started" : "Reindex queued" } } }
-                        Button("Back up now") { Task { await run { let a = try await client.backupNow(vault: vaultID); return a.ok ? "Backed up\(a.head.map { " · \($0.prefix(8))" } ?? "")" : "Backup failed" } } }
+                        Button("Reindex") { Task { await run("Reindexing") { try await client.reindex(vault: vaultID).started ? "Reindex started" : "Reindex queued" } } }
+                        Button("Back up now") { Task { await run("Backing up") { let a = try await client.backupNow(vault: vaultID); return a.ok ? "Backed up\(a.head.map { " · \($0.prefix(8))" } ?? "")" : "Backup failed" } } }
                             .disabled((config?.backupRemote ?? "").isEmpty)
-                        Button("Sync now") { Task { await run { let a = try await client.syncNow(vault: vaultID); return a.ok ? "Synced" : "Sync failed" } } }
-                        if busy { ProgressView().controlSize(.small) }
+                        Button("Sync now") { Task { await run("Syncing") { let a = try await client.syncNow(vault: vaultID); return a.ok ? "Synced" : "Sync failed" } } }
                     }
-                    if let status {
+                    .disabled(busy)
+                    if busy {
+                        HStack(spacing: Spacing.sm) {
+                            ProgressView().controlSize(.small)
+                            Text(progressText).font(Typography.caption).foregroundStyle(ThemeColor.textSecondary)
+                        }
+                    } else if let status {
                         Text(status).font(Typography.caption).foregroundStyle(ThemeColor.textSecondary)
                     }
                 }
@@ -178,8 +191,17 @@ struct SyncBackupSettingsView: View {
         }
     }
 
-    private func run(_ action: @escaping () async throws -> String) async {
-        busy = true; defer { busy = false }
+    private func run(_ label: String? = nil, _ action: @escaping () async throws -> String) async {
+        busy = true; busyLabel = label; elapsed = 0; status = nil
+        // Tick an elapsed-seconds counter so a long git op (backup/sync) shows it's alive.
+        let ticker = Task { @MainActor in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                if Task.isCancelled { break }
+                elapsed += 1
+            }
+        }
+        defer { ticker.cancel(); busy = false; busyLabel = nil }
         do { status = try await action() }
         catch let e as SvodClientError where e.isNotImplemented { status = e.errorDescription }
         catch let e as SvodClientError { status = e.errorDescription }

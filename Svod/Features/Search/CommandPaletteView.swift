@@ -93,20 +93,24 @@ struct CommandPaletteView: View {
             if let error = model.errorMessage {
                 ErrorStateView(message: error) { Task { await model.runSearch() } }
                     .frame(height: 240)
-            } else if model.query.trimmingCharacters(in: .whitespaces).isEmpty {
-                idlePrompt
-            } else if model.results.isEmpty {
-                if model.isSearching && !model.hasSearched {
-                    LoadingStateView("Searching…").frame(height: 240)
-                } else {
-                    EmptyStateView(icon: "text.magnifyingglass", title: "No matches",
-                                   message: "Nothing matched “\(model.query)”. Try a different term or relax the filters.")
-                        .frame(height: 240)
-                }
+            } else if !model.results.isEmpty {
+                resultsList   // show results whenever there are any — incl. tag-only browse
+            } else if model.isSearching && !model.hasSearched {
+                LoadingStateView("Searching…").frame(height: 240)
+            } else if model.hasSearched {
+                EmptyStateView(icon: "text.magnifyingglass", title: "No matches", message: noMatchMessage)
+                    .frame(height: 240)
             } else {
-                resultsList
+                idlePrompt
             }
         }
+    }
+
+    private var noMatchMessage: String {
+        let q = model.query.trimmingCharacters(in: .whitespaces)
+        return q.isEmpty
+            ? "No notes match the current filters."
+            : "Nothing matched “\(q)”. Try a different term or relax the filters."
     }
 
     private var resultsList: some View {
