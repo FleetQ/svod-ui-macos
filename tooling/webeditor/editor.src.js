@@ -3,7 +3,7 @@
 // Bridges to Swift through window.webkit.messageHandlers.svod and window.SvodEditor.
 
 import { EditorView, keymap, drawSelection, highlightActiveLine,
-         highlightActiveLineGutter, lineNumbers } from "@codemirror/view";
+         highlightActiveLineGutter, lineNumbers, Decoration, ViewPlugin } from "@codemirror/view";
 import { EditorState, Compartment } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
@@ -176,6 +176,28 @@ function makeHighlight() {
 }
 
 // ── Editor setup ────────────────────────────────────────────────────────────
+// ── Focus mode — dim every line except the caret's (toggled from Swift) ──────
+let focusMode = false;
+const focusDim = Decoration.line({ class: "cm-focus-dim" });
+const focusPlugin = ViewPlugin.fromClass(class {
+  constructor(view) { this.decorations = this.build(view); }
+  update(u) { this.decorations = this.build(u.view); }
+  build(view) {
+    if (!focusMode) return Decoration.none;
+    const activeLine = view.state.doc.lineAt(view.state.selection.main.head).number;
+    const deco = [];
+    for (const { from, to } of view.visibleRanges) {
+      let pos = from;
+      while (pos <= to) {
+        const line = view.state.doc.lineAt(pos);
+        if (line.number !== activeLine) deco.push(focusDim.range(line.from));
+        pos = line.to + 1;
+      }
+    }
+    return Decoration.set(deco);
+  }
+}, { decorations: (v) => v.decorations });
+
 function buildState(doc) {
   return EditorState.create({
     doc,
@@ -189,6 +211,7 @@ function buildState(doc) {
       EditorView.lineWrapping,
       markdown({ base: markdownLanguage, codeLanguages: [], addKeymap: true }),
       autocompletion({ override: [wikilinkSource], activateOnTyping: true, icons: false }),
+      focusPlugin,
       hlC.of(makeHighlight()),
       themeC.of(makeTheme()),
       keymap.of([...completionKeymap, ...defaultKeymap, ...historyKeymap, ...searchKeymap, ...foldKeymap, indentWithTab]),
@@ -242,6 +265,7 @@ window.SvodEditor = {
   },
   getContent() { return view ? view.state.doc.toString() : ""; },
   setMode,
+  setFocusMode(on) { focusMode = !!on; if (view) view.dispatch({}); },
   setNoteNames(arr) {
     noteNamesList = (arr || []).map((n) => String(n).replace(/\.md$/i, "").trim()).filter(Boolean);
     noteNames = new Set(noteNamesList.map((n) => n.toLowerCase()));

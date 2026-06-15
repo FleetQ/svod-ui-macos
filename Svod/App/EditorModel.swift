@@ -65,8 +65,10 @@ public final class EditorModel: ObservableObject {
             self.dirty = false
             await loadSidecar(path: path)
         } catch let e as SvodClientError {
+            if Task.isCancelled { return }   // superseded by a newer load — not a real error
             self.errorMessage = e.errorDescription
         } catch {
+            if Task.isCancelled { return }
             self.errorMessage = error.localizedDescription
         }
     }
