@@ -83,20 +83,38 @@ final class GraphScene: ObservableObject {
         return CGPoint(x: s.x + cos(angle) * 64, y: s.y + sin(angle) * 64)
     }
 
+    private var reheatRequested = false
+    private func consumeReheat() -> Bool { defer { reheatRequested = false }; return reheatRequested }
+    private func applySnapshot(_ l: GraphLayout, settled: Bool) {
+        layout = l
+        tick &+= 1
+        if settled { isSettled = true; loopTask = nil }
+    }
+
     // MARK: redraw loop
     func start() {
         guard !reduceMotion, loopTask == nil else { return }
         isSettled = false
-        loopTask = Task { [weak self] in
-            var settledFrames = 0
-            while let self, !Task.isCancelled {
-                let energy = self.layout.step()
-                self.tick &+= 1
-                if energy < 0.6 { settledFrames += 1 } else { settledFrames = 0 }
-                if settledFrames > 24 {            // ~0.4s calm → freeze
-                    self.isSettled = true
-                    break
-                }
+        layout.reheat()
+        // Run the O(n²) physics on a background thread; only snapshots cross back to the
+        // main actor for rendering. Keeps the UI responsive while a large graph cools.
+        loopTask = Task.detached(priority: .userInitiated) { [weak self] in
+            guard let self else { return }
+            var local = await self.layout
+            var frames = 0
+            while !Task.isCancelled {
+                if await self.consumeReheat() { local.reheat(); frames = 0 }
+                // Several integration steps per published frame: cooling advances in
+                // wall-clock without a redraw per step, so a big graph settles in ~2s.
+                let steps = local.count > 250 ? 5 : (local.count > 80 ? 3 : 1)
+                for _ in 0..<steps { local.step() }
+                frames += 1
+                // alpha (not kinetic energy) guarantees a stop — force-balance alone never
+                // converges in a dense graph. Frame cap is a backstop.
+                let settled = local.alpha <= local.alphaMin || frames > 1200
+                let snapshot = local
+                await self.applySnapshot(snapshot, settled: settled)
+                if settled { break }
                 try? await Task.sleep(nanoseconds: 16_000_000)   // ~60fps
             }
         }
@@ -108,11 +126,34 @@ final class GraphScene: ObservableObject {
     /// into a stale layout). No-op under Reduce Motion.
     func nudge() {
         guard !reduceMotion else { return }
-        if loopTask == nil { start() }
+        if loopTask == nil { layout.reheat(); start() } else { reheatRequested = true; isSettled = false }
     }
 
     func magnify(by factor: CGFloat) {
         zoom = min(3, max(0.3, zoom * factor))
+    }
+
+    /// True while the pointer is over the canvas — gates the scroll-wheel zoom monitor
+    /// so scrolling elsewhere in the app doesn't zoom the graph. Plain var (no redraw).
+    var pointerInside = false
+    /// Last pointer position + the view's drawing center, both in canvas-local coords,
+    /// pushed by GraphView so scroll-zoom can keep the point under the cursor fixed.
+    var pointer: CGPoint = .zero
+    var viewCenter: CGPoint = .zero
+
+    /// Mouse scroll-wheel → zoom toward the cursor. `precise` deltas come from trackpads
+    /// (small, continuous); mouse wheels send larger discrete steps, so scale those up.
+    func scrollZoom(deltaY: CGFloat, precise: Bool) {
+        let d = precise ? deltaY : deltaY * 3
+        let factor = d >= 0 ? 1 + min(0.25, d * 0.01) : 1 / (1 + min(0.25, -d * 0.01))
+        let newZoom = min(3, max(0.3, zoom * factor))
+        guard newZoom != zoom else { return }
+        // Keep the world point under the cursor fixed: screen = base + pan + world*zoom.
+        let base = CGPoint(x: viewCenter.x - pan.width, y: viewCenter.y - pan.height)
+        let world = CGPoint(x: (pointer.x - viewCenter.x) / zoom, y: (pointer.y - viewCenter.y) / zoom)
+        zoom = newZoom
+        pan = CGSize(width: pointer.x - world.x * newZoom - base.x,
+                     height: pointer.y - world.y * newZoom - base.y)
     }
 
     func panBy(_ t: CGSize) {
