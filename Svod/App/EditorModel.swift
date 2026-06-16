@@ -118,6 +118,39 @@ public final class EditorModel: ObservableObject {
 
     public func markDirty() { if !dirty { dirty = true } }
 
+    /// An external writer (a sync pull, another agent, or the file watcher) changed a
+    /// file. If it's the open note, reconcile without losing unsaved edits: a clean
+    /// buffer adopts the new content silently; unsaved edits open the 3-way merge
+    /// instead of being clobbered. No-op for any other note.
+    public func reconcileExternalChange(path: String) async {
+        guard app?.selectedPath == path else { return }   // not the open note
+        guard !isSaving else { return }                    // our own write owns the state
+        guard let fresh = try? await client.readFile(path: path) else { return }
+        guard app?.selectedPath == path else { return }    // user switched notes mid-fetch
+        if fresh.revision == file?.revision { return }     // our own echo / no real change
+        if fresh.content == draft {
+            // Buffer already matches disk (incl. dirty-but-identical) — adopt the
+            // fresh revision so a later save won't 409 against a stale one.
+            self.file = fresh
+            self.dirty = false
+            return
+        }
+        if !dirty {
+            suppressAutosave = true
+            self.file = fresh
+            self.draft = fresh.content
+            suppressAutosave = false
+            self.dirty = false
+        } else {
+            // Unsaved local edits AND a different incoming version → surface a 3-way
+            // merge (base/ours/theirs) rather than clobbering the buffer.
+            app?.presentConflict(ConflictBody(path: path,
+                                              expected: file?.revision,
+                                              current: fresh.revision,
+                                              currentContent: fresh.content))
+        }
+    }
+
     private static func noteNames(in node: TreeNode) -> [String] {
         var out: [String] = []
         func walk(_ n: TreeNode) {
