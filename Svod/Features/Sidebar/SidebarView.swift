@@ -172,13 +172,13 @@ private struct TreeNodeRow: View {
     let app: AppModel
 
     @FocusState private var focused: Bool
-    @State private var hovering = false
     @State private var confirmingDelete = false
     @State private var deleteError: String?
 
     private var isDir: Bool { node.type == .dir }
     private var isExpanded: Bool { model.expanded.contains(node.path) }
     private var isSelected: Bool { app.selectedPath == node.path }
+    private var hovering: Bool { model.hoveredPath == node.path }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.xxs) {
@@ -225,7 +225,10 @@ private struct TreeNodeRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .onHover { hovering = $0 }
+        .onHover { inside in
+            if inside { model.hoveredPath = node.path }
+            else if model.hoveredPath == node.path { model.hoveredPath = nil }
+        }
         .focusable(true)
         .focused($focused)
         .focusEffectDisabled()
