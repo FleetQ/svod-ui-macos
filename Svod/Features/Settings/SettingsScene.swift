@@ -70,6 +70,9 @@ struct SettingsScene: View {
                 Label(s.title, systemImage: s.icon).tag(s)
             }
             .navigationSplitViewColumnWidth(200)
+            // The settings sidebar is the navigation itself — collapsing it is pointless,
+            // so drop the auto-added sidebar-toggle toolbar button.
+            .toolbar(removing: .sidebarToggle)
         } detail: {
             ScrollView { detail.padding(.vertical, Spacing.sm) }
                 .navigationTitle(section.title)
