@@ -21,6 +21,11 @@ public final class SidebarModel: ObservableObject {
     @Published public var tags: [Tags.Tag] = []
     @Published public var savedSearches: [SavedSearch] = []
     @Published public var expanded: Set<String> = []
+    /// The single hovered row path. Shared (not per-row @State) so hover is mutually
+    /// exclusive — entering one row clears any other, even when AppKit drops a row's
+    /// onHover(false) exit event during rapid clicks (which left several rows stuck
+    /// highlighted at once).
+    @Published public var hoveredPath: String?
     @Published public var isLoading = false
     @Published public var errorMessage: String?
 
