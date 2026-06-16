@@ -89,7 +89,8 @@ public protocol SvodClient: AnyObject, Sendable {
     // when the engine returns 501 so the UI degrades to a "needs engine support" note.
     func syncConfig(vault: String?) async throws -> SyncConfig
     @discardableResult
-    func setBackup(vault: String?, remote: String, enabled: Bool) async throws -> SyncConfig
+    func setBackup(vault: String?, remote: String, enabled: Bool,
+                   backupOnStartup: Bool, backupIntervalMinutes: Int, backupOnChange: Bool) async throws -> SyncConfig
     @discardableResult
     func reindex(vault: String?) async throws -> MaintenanceAck
     @discardableResult
@@ -136,6 +137,12 @@ public extension SvodClient {
     @discardableResult
     func importVault(source: String, into: String? = nil, vault: String? = nil) async throws -> ImportResult {
         try await importVault(source: source, into: into, vault: vault, followSymlinks: false)
+    }
+    /// Set the backup destination without changing the schedule (manual: no auto-backup).
+    @discardableResult
+    func setBackup(vault: String?, remote: String, enabled: Bool) async throws -> SyncConfig {
+        try await setBackup(vault: vault, remote: remote, enabled: enabled,
+                            backupOnStartup: false, backupIntervalMinutes: 0, backupOnChange: false)
     }
 }
 

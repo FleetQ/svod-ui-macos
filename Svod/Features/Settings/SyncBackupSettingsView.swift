@@ -20,6 +20,20 @@ struct SyncBackupSettingsView: View {
     @State private var busy = false
     @State private var busyLabel: String?
     @State private var elapsed = 0
+    @State private var repoName = ""
+    // Auto-backup schedule mirrors (loaded from the engine config; edits write back).
+    @State private var autoInterval = 0       // minutes; 0 = off
+    @State private var autoOnChange = false
+    @State private var autoOnStartup = false
+    @State private var scheduleLoaded = false  // guards onChange→save during initial load
+
+    /// Last successful backup, parsed from the engine's ISO-8601 marker.
+    private var lastBackupText: String? {
+        guard let iso = config?.lastBackupAt else { return nil }
+        let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let date = f.date(from: iso) ?? ISO8601DateFormatter().date(from: iso)
+        return date.map { "Last backup \($0.formatted(.relative(presentation: .named)))" }
+    }
 
     private var progressText: String {
         let t = elapsed > 0 ? " · \(elapsed)s" : ""
@@ -30,6 +44,21 @@ struct SyncBackupSettingsView: View {
     /// Multi-host sync needs at least one peer; without one there's nothing to sync
     /// (this vault still backs up to GitHub).
     private var syncUnavailable: Bool { config?.syncPeers.isEmpty ?? true }
+
+    /// Persist the auto-backup schedule to the engine (preserves the current remote/enabled).
+    private func saveSchedule() async {
+        guard scheduleLoaded, let remote = config?.backupRemote, !remote.isEmpty else { return }
+        await run("Saving") {
+            let c = try await client.setBackup(vault: vaultID, remote: remote,
+                                               enabled: config?.backupEnabled ?? true,
+                                               backupOnStartup: autoOnStartup,
+                                               backupIntervalMinutes: autoInterval,
+                                               backupOnChange: autoOnChange)
+            config = c
+            return (autoInterval == 0 && !autoOnChange && !autoOnStartup)
+                ? "Automatic backup off" : "Automatic backup updated"
+        }
+    }
 
     private func syncMessage(_ a: SyncAck) -> String {
         let n = a.conflicts ?? 0
@@ -52,10 +81,36 @@ struct SyncBackupSettingsView: View {
             }
 
             if !configUnavailable {
+                if (config?.backupRemote ?? "").isEmpty == false {
+                    Section("Automatic backup") {
+                        Picker("Schedule", selection: $autoInterval) {
+                            Text("Off (manual only)").tag(0)
+                            Text("Every 15 minutes").tag(15)
+                            Text("Every 30 minutes").tag(30)
+                            Text("Hourly").tag(60)
+                            Text("Every 6 hours").tag(360)
+                            Text("Daily").tag(1440)
+                        }
+                        .onChange(of: autoInterval) { _, _ in Task { await saveSchedule() } }
+                        Toggle("Back up after edits settle", isOn: $autoOnChange)
+                            .onChange(of: autoOnChange) { _, _ in Task { await saveSchedule() } }
+                        Toggle("Back up on engine startup", isOn: $autoOnStartup)
+                            .onChange(of: autoOnStartup) { _, _ in Task { await saveSchedule() } }
+                        Text("Runs in the background, pushing to the same private repo. Engine v1.3+.")
+                            .font(Typography.caption).foregroundStyle(ThemeColor.textTertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .disabled(busy)
+                }
+
                 Section("Actions") {
                     HStack(spacing: Spacing.sm) {
                         Button("Reindex") { Task { await run("Reindexing") { try await client.reindex(vault: vaultID).started ? "Reindex started" : "Reindex queued" } } }
-                        Button("Back up now") { Task { await run("Backing up") { let a = try await client.backupNow(vault: vaultID); return a.ok ? "Backed up\(a.head.map { " · \($0.prefix(8))" } ?? "")" : "Backup failed" } } }
+                        Button("Back up now") { Task { await run("Backing up") {
+                            let a = try await client.backupNow(vault: vaultID)
+                            if a.ok { await loadConfig() }   // refresh last-backup marker from the engine
+                            return a.ok ? "Backed up\(a.head.map { " · \($0.prefix(8))" } ?? "")" : "Backup failed"
+                        } } }
                             .disabled((config?.backupRemote ?? "").isEmpty)
                         Button("Sync now") { Task { await run("Syncing") { let a = try await client.syncNow(vault: vaultID); return syncMessage(a) } } }
                             .disabled(syncUnavailable)
@@ -115,6 +170,9 @@ struct SyncBackupSettingsView: View {
             if let remote = config?.backupRemote, !remote.isEmpty {
                 Label("Backing up to \(friendly(remote))", systemImage: "checkmark.seal.fill")
                     .font(Typography.callout).foregroundStyle(ThemeColor.sync)
+                Text(lastBackupText ?? "Not backed up yet — press “Back up now” or turn on automatic backup below.")
+                    .font(Typography.caption).foregroundStyle(ThemeColor.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
                 Text("Snapshots are pushed to a git ref (refs/svod/backup/\(vaultID ?? "default")) — safe and restorable, but GitHub’s web view won’t list them (it shows only branches/tags). Verify with `git ls-remote`.")
                     .font(Typography.caption).foregroundStyle(ThemeColor.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -122,6 +180,12 @@ struct SyncBackupSettingsView: View {
             } else {
                 Text("Back up this vault to a private GitHub repository.")
                     .font(Typography.callout).foregroundStyle(ThemeColor.textSecondary)
+                TextField("Repository name", text: $repoName,
+                          prompt: Text("svod-backup-\(vaultID ?? "default")"))
+                    .textFieldStyle(.roundedBorder)
+                Text("Leave blank for the default. A private repo with this name is created (or reused) under your account.")
+                    .font(Typography.caption2).foregroundStyle(ThemeColor.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
                 Button { Task { await connectGitHub() } } label: {
                     Label("Connect GitHub", systemImage: "arrow.up.forward.app")
                 }
@@ -161,7 +225,7 @@ struct SyncBackupSettingsView: View {
 
     private func connectGitHub() async {
         let vid = vaultID ?? "default"
-        guard let result = await gh.connect(vaultId: vid) else { return }
+        guard let result = await gh.connect(vaultId: vid, repoName: repoName) else { return }
         // Persist the keychain ref + enabled in the engine (raw token never sent).
         backupRemote = result.ref
         backupEnabled = true
@@ -192,6 +256,11 @@ struct SyncBackupSettingsView: View {
             config = c
             backupRemote = c.backupRemote ?? ""
             backupEnabled = c.backupEnabled
+            scheduleLoaded = false                 // suppress onChange→save while seeding
+            autoInterval = c.backupIntervalMinutes ?? 0
+            autoOnChange = c.backupOnChange
+            autoOnStartup = c.backupOnStartup
+            scheduleLoaded = true
             configUnavailable = false
         } catch let e as SvodClientError where e.isNotImplemented {
             configUnavailable = true
