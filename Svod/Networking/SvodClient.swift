@@ -90,7 +90,8 @@ public protocol SvodClient: AnyObject, Sendable {
     func syncConfig(vault: String?) async throws -> SyncConfig
     @discardableResult
     func setBackup(vault: String?, remote: String, enabled: Bool,
-                   backupOnStartup: Bool, backupIntervalMinutes: Int, backupOnChange: Bool) async throws -> SyncConfig
+                   backupOnStartup: Bool, backupIntervalMinutes: Int, backupOnChange: Bool,
+                   syncEnabled: Bool, syncIntervalMinutes: Int?) async throws -> SyncConfig
     @discardableResult
     func reindex(vault: String?) async throws -> MaintenanceAck
     @discardableResult
@@ -142,7 +143,16 @@ public extension SvodClient {
     @discardableResult
     func setBackup(vault: String?, remote: String, enabled: Bool) async throws -> SyncConfig {
         try await setBackup(vault: vault, remote: remote, enabled: enabled,
-                            backupOnStartup: false, backupIntervalMinutes: 0, backupOnChange: false)
+                            backupOnStartup: false, backupIntervalMinutes: 0, backupOnChange: false,
+                            syncEnabled: false, syncIntervalMinutes: nil)
+    }
+    /// Backup-schedule overload that leaves two-way sync off (the pre-0.12.0 call site shape).
+    @discardableResult
+    func setBackup(vault: String?, remote: String, enabled: Bool,
+                   backupOnStartup: Bool, backupIntervalMinutes: Int, backupOnChange: Bool) async throws -> SyncConfig {
+        try await setBackup(vault: vault, remote: remote, enabled: enabled,
+                            backupOnStartup: backupOnStartup, backupIntervalMinutes: backupIntervalMinutes,
+                            backupOnChange: backupOnChange, syncEnabled: false, syncIntervalMinutes: nil)
     }
 }
 

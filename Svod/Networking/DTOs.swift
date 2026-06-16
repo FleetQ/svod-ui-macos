@@ -391,14 +391,20 @@ public struct SyncConfig: Codable, Hashable, Sendable {
     public var syncPeers: [String]
     public var role: String?
     public var hostId: String?
+    // Two-way multi-machine sync (contract 0.12.0). When `syncEnabled`, the same
+    // `backupRemote` is the bidirectional bus and one-way backup is retired.
+    public var syncEnabled: Bool
+    public var syncIntervalMinutes: Int?
     public init(backupRemote: String? = nil, backupEnabled: Bool = false,
                 backupOnStartup: Bool = false, backupIntervalMinutes: Int? = nil,
                 backupOnChange: Bool = false, lastBackupAt: String? = nil, lastBackupHead: String? = nil,
-                syncPeers: [String] = [], role: String? = nil, hostId: String? = nil) {
+                syncPeers: [String] = [], role: String? = nil, hostId: String? = nil,
+                syncEnabled: Bool = false, syncIntervalMinutes: Int? = nil) {
         self.backupRemote = backupRemote; self.backupEnabled = backupEnabled
         self.backupOnStartup = backupOnStartup; self.backupIntervalMinutes = backupIntervalMinutes
         self.backupOnChange = backupOnChange; self.lastBackupAt = lastBackupAt; self.lastBackupHead = lastBackupHead
         self.syncPeers = syncPeers; self.role = role; self.hostId = hostId
+        self.syncEnabled = syncEnabled; self.syncIntervalMinutes = syncIntervalMinutes
     }
     // Tolerant decode so older engines (no schedule/marker fields) still work.
     public init(from d: Decoder) throws {
@@ -413,6 +419,8 @@ public struct SyncConfig: Codable, Hashable, Sendable {
         syncPeers = try c.decodeIfPresent([String].self, forKey: .syncPeers) ?? []
         role = try c.decodeIfPresent(String.self, forKey: .role)
         hostId = try c.decodeIfPresent(String.self, forKey: .hostId)
+        syncEnabled = try c.decodeIfPresent(Bool.self, forKey: .syncEnabled) ?? false
+        syncIntervalMinutes = try c.decodeIfPresent(Int.self, forKey: .syncIntervalMinutes)
     }
 }
 
@@ -422,12 +430,19 @@ public struct BackupConfigRequest: Codable, Hashable, Sendable {
     public var backupOnStartup: Bool
     public var backupIntervalMinutes: Int   // 0 = no timer
     public var backupOnChange: Bool
+    // Two-way sync (contract 0.12.0). When `syncEnabled`, `remote` becomes the
+    // bidirectional bus. `syncIntervalMinutes` nil ⇒ engine default (3).
+    public var syncEnabled: Bool
+    public var syncIntervalMinutes: Int?
     public init(remote: String, enabled: Bool, backupOnStartup: Bool = false,
-                backupIntervalMinutes: Int = 0, backupOnChange: Bool = false) {
+                backupIntervalMinutes: Int = 0, backupOnChange: Bool = false,
+                syncEnabled: Bool = false, syncIntervalMinutes: Int? = nil) {
         self.remote = remote; self.enabled = enabled
         self.backupOnStartup = backupOnStartup
         self.backupIntervalMinutes = backupIntervalMinutes
         self.backupOnChange = backupOnChange
+        self.syncEnabled = syncEnabled
+        self.syncIntervalMinutes = syncIntervalMinutes
     }
 }
 
@@ -464,6 +479,9 @@ public struct Metrics: Codable, Hashable, Sendable {
         public var role: String
         public var lastHead: String?
         public var conflicts: Int
+        // Live two-way sync standing (contract 0.12.0); absent on older engines.
+        public var syncStatus: String?      // "inSync" | "syncing" | "conflicts" | "offline" | "error"
+        public var lastSyncedAt: String?    // ISO-8601
     }
     public var write: Write
     public var queueDepth: Int
@@ -478,11 +496,24 @@ public struct Metrics: Codable, Hashable, Sendable {
 /// Per-vault sync standing (contract `SyncStatus`). Each vault is its own git repo,
 /// lock, index and sync, so sync state is reported per vault.
 public struct SyncStatus: Codable, Hashable, Sendable {
-    public var role: String              // e.g. "authority" | "follower" | "solo"
+    public var role: String              // "synced" | "authority" | "follower" | "solo"
     public var lastHead: String?
     public var conflicts: Int
-    public init(role: String, lastHead: String? = nil, conflicts: Int = 0) {
+    // Live sync standing (contract 0.12.0). null until the first two-way sync.
+    public var syncStatus: String?       // "inSync" | "syncing" | "conflicts" | "offline" | "error"
+    public var lastSyncedAt: String?     // ISO-8601
+    public init(role: String, lastHead: String? = nil, conflicts: Int = 0,
+                syncStatus: String? = nil, lastSyncedAt: String? = nil) {
         self.role = role; self.lastHead = lastHead; self.conflicts = conflicts
+        self.syncStatus = syncStatus; self.lastSyncedAt = lastSyncedAt
+    }
+    public init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        role = try c.decodeIfPresent(String.self, forKey: .role) ?? "solo"
+        lastHead = try c.decodeIfPresent(String.self, forKey: .lastHead)
+        conflicts = try c.decodeIfPresent(Int.self, forKey: .conflicts) ?? 0
+        syncStatus = try c.decodeIfPresent(String.self, forKey: .syncStatus)
+        lastSyncedAt = try c.decodeIfPresent(String.self, forKey: .lastSyncedAt)
     }
 }
 
