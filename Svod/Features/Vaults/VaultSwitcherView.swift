@@ -51,13 +51,39 @@ struct VaultSwitcherView: View {
         }
     }
 
+    // Dot color for a vault's live sync state. nil ⇒ not synced (solo) ⇒ no dot,
+    // so a green "synced" dot never misrepresents a one-way / solo vault.
+    private func dotColor(_ s: SyncStatus) -> Color? {
+        if s.conflicts > 0 { return ThemeColor.conflict }
+        switch s.syncStatus {
+        case "inSync", "syncing": return ThemeColor.sync
+        case "conflicts":         return ThemeColor.conflict
+        case "offline":           return ThemeColor.offline
+        case "error":             return ThemeColor.warning
+        default:                  return s.role == "solo" ? nil : ThemeColor.sync
+        }
+    }
+
+    private func dotHelp(_ s: SyncStatus) -> String {
+        if s.conflicts > 0 { return "\(s.conflicts) conflict\(s.conflicts == 1 ? "" : "s")" }
+        switch s.syncStatus {
+        case "syncing": return "Syncing…"
+        case "offline": return "Offline"
+        case "error":   return "Sync error"
+        case "inSync":  return "In sync"
+        default:        return "Synced (\(s.role))"
+        }
+    }
+
     // Tiny dot for the toolbar button label
     @ViewBuilder private func inlineSyncDot(_ s: SyncStatus) -> some View {
-        Circle()
-            .fill(s.conflicts > 0 ? ThemeColor.conflict : ThemeColor.sync)
-            .frame(width: 6, height: 6)
-            .help(s.conflicts > 0 ? "\(s.conflicts) conflict(s)" : "Synced (\(s.role))")
-            .accessibilityLabel(s.conflicts > 0 ? "\(s.conflicts) conflicts" : "synced")
+        if let c = dotColor(s) {
+            Circle()
+                .fill(c)
+                .frame(width: 6, height: 6)
+                .help(dotHelp(s))
+                .accessibilityLabel(dotHelp(s))
+        }
     }
 
     // Text-based indicator inside menu items (SwiftUI menus don't render Circle well)
@@ -66,10 +92,10 @@ struct VaultSwitcherView: View {
             Text("⚠ \(s.conflicts)")
                 .font(Typography.caption)
                 .foregroundStyle(ThemeColor.conflict)
-        } else {
+        } else if dotColor(s) != nil {
             Text("●")
                 .font(Typography.caption)
-                .foregroundStyle(ThemeColor.sync)
+                .foregroundStyle(dotColor(s)!)
         }
     }
 

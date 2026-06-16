@@ -316,13 +316,16 @@ public final class MockSvodClient: SvodClient, @unchecked Sendable {
     }
     @discardableResult
     public func setBackup(vault: String?, remote: String, enabled: Bool,
-                          backupOnStartup: Bool, backupIntervalMinutes: Int, backupOnChange: Bool) async throws -> SyncConfig {
+                          backupOnStartup: Bool, backupIntervalMinutes: Int, backupOnChange: Bool,
+                          syncEnabled: Bool, syncIntervalMinutes: Int?) async throws -> SyncConfig {
         try await gate()
         return SyncConfig(backupRemote: remote, backupEnabled: enabled,
                           backupOnStartup: backupOnStartup,
                           backupIntervalMinutes: backupIntervalMinutes == 0 ? nil : backupIntervalMinutes,
                           backupOnChange: backupOnChange,
-                          syncPeers: [], role: "authority", hostId: "mac")
+                          syncPeers: syncEnabled ? [remote] : [],
+                          role: syncEnabled ? "synced" : "authority", hostId: "mac",
+                          syncEnabled: syncEnabled, syncIntervalMinutes: syncIntervalMinutes)
     }
     @discardableResult
     public func reindex(vault: String?) async throws -> MaintenanceAck {

@@ -200,12 +200,15 @@ public final class LiveSvodClient: SvodClient, @unchecked Sendable {
     }
     @discardableResult
     public func setBackup(vault: String?, remote: String, enabled: Bool,
-                          backupOnStartup: Bool, backupIntervalMinutes: Int, backupOnChange: Bool) async throws -> SyncConfig {
+                          backupOnStartup: Bool, backupIntervalMinutes: Int, backupOnChange: Bool,
+                          syncEnabled: Bool, syncIntervalMinutes: Int?) async throws -> SyncConfig {
         try await send("/api/v1/settings/backup", method: "PUT", query: vaultQuery(vault),
                        body: BackupConfigRequest(remote: remote, enabled: enabled,
                                                  backupOnStartup: backupOnStartup,
                                                  backupIntervalMinutes: backupIntervalMinutes,
-                                                 backupOnChange: backupOnChange))
+                                                 backupOnChange: backupOnChange,
+                                                 syncEnabled: syncEnabled,
+                                                 syncIntervalMinutes: syncIntervalMinutes))
     }
     @discardableResult
     public func reindex(vault: String?) async throws -> MaintenanceAck {

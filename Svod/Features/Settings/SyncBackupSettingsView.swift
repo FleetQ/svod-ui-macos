@@ -26,6 +26,9 @@ struct SyncBackupSettingsView: View {
     @State private var autoOnChange = false
     @State private var autoOnStartup = false
     @State private var scheduleLoaded = false  // guards onChange→save during initial load
+    // Two-way multi-machine sync (contract 0.12.0). Reuses the backup remote as the bus.
+    @State private var syncOn = false
+    @State private var syncInterval = 0        // minutes; 0 = engine default (3)
 
     /// Last successful backup, parsed from the engine's ISO-8601 marker.
     private var lastBackupText: String? {
@@ -35,35 +38,66 @@ struct SyncBackupSettingsView: View {
         return date.map { "Last backup \($0.formatted(.relative(presentation: .named)))" }
     }
 
+    /// Human label for the live sync state (from metrics; falls back to the config role).
+    private var syncStateText: String {
+        switch app.engine.metrics?.sync?.syncStatus ?? config?.role ?? "synced" {
+        case "inSync":    return "In sync"
+        case "syncing":   return "Syncing…"
+        case "conflicts": return "Conflicts to resolve"
+        case "offline":   return "Offline"
+        case "error":     return "Error"
+        case let other:   return other.prefix(1).uppercased() + other.dropFirst()
+        }
+    }
+
+    private var lastSyncedText: String? {
+        guard let iso = app.engine.metrics?.sync?.lastSyncedAt else { return nil }
+        let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let date = f.date(from: iso) ?? ISO8601DateFormatter().date(from: iso)
+        return date.map { $0.formatted(.relative(presentation: .named)) }
+    }
+
     private var progressText: String {
         let t = elapsed > 0 ? " · \(elapsed)s" : ""
         let hint = elapsed >= 6 ? " — large vaults or the first push can take a while" : ""
         return (busyLabel ?? "Working") + "…" + t + hint
     }
 
-    /// Multi-host sync needs at least one peer; without one there's nothing to sync
-    /// (this vault still backs up to GitHub).
-    private var syncUnavailable: Bool { config?.syncPeers.isEmpty ?? true }
+    /// Two-way sync is available to run once it's been enabled for this vault.
+    private var syncUnavailable: Bool { !(config?.syncEnabled ?? false) }
 
-    /// Persist the auto-backup schedule to the engine (preserves the current remote/enabled).
-    private func saveSchedule() async {
+    /// Single writer for the backup endpoint — both the schedule and the sync toggle
+    /// flow through here so neither clobbers the other's fields.
+    private func persistBackup(message: String) async {
         guard scheduleLoaded, let remote = config?.backupRemote, !remote.isEmpty else { return }
         await run("Saving") {
             let c = try await client.setBackup(vault: vaultID, remote: remote,
                                                enabled: config?.backupEnabled ?? true,
                                                backupOnStartup: autoOnStartup,
                                                backupIntervalMinutes: autoInterval,
-                                               backupOnChange: autoOnChange)
+                                               backupOnChange: autoOnChange,
+                                               syncEnabled: syncOn,
+                                               syncIntervalMinutes: syncOn ? (syncInterval == 0 ? nil : syncInterval) : nil)
             config = c
-            return (autoInterval == 0 && !autoOnChange && !autoOnStartup)
-                ? "Automatic backup off" : "Automatic backup updated"
+            return message
         }
+    }
+
+    private func saveSchedule() async {
+        await persistBackup(message: (autoInterval == 0 && !autoOnChange && !autoOnStartup)
+                            ? "Automatic backup off" : "Automatic backup updated")
+    }
+
+    private func saveSync() async {
+        await persistBackup(message: syncOn
+                            ? "Two-way sync on — this vault now reconciles across your machines"
+                            : "Two-way sync off")
     }
 
     private func syncMessage(_ a: SyncAck) -> String {
         let n = a.conflicts ?? 0
         if a.ok { return n > 0 ? "Synced · \(n) conflict\(n == 1 ? "" : "s")" : "Synced" }
-        return n > 0 ? "Sync left \(n) conflict\(n == 1 ? "" : "s")" : "Nothing to sync — no peers configured"
+        return n > 0 ? "Sync left \(n) conflict\(n == 1 ? "" : "s")" : "Two-way sync isn’t on for this vault."
     }
 
     private var client: SvodClient { app.client }
@@ -100,6 +134,33 @@ struct SyncBackupSettingsView: View {
                             .font(Typography.caption).foregroundStyle(ThemeColor.textTertiary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
+                    .disabled(busy || syncOn)
+
+                    Section("Sync across your machines") {
+                        Toggle("Keep this vault in sync on all my Macs", isOn: $syncOn)
+                            .onChange(of: syncOn) { _, _ in Task { await saveSync() } }
+                        if syncOn {
+                            Picker("Check for changes", selection: $syncInterval) {
+                                Text("Default (every 3 minutes)").tag(0)
+                                Text("Every 5 minutes").tag(5)
+                                Text("Every 15 minutes").tag(15)
+                                Text("Every 30 minutes").tag(30)
+                                Text("Hourly").tag(60)
+                            }
+                            .onChange(of: syncInterval) { _, _ in Task { await saveSync() } }
+                        }
+                        Text(syncOn
+                             ? "The same private repo is now a two-way bus. Each Mac fetches, merges, and pushes on this cadence; non-overlapping edits merge silently, real overlaps land in the conflict list. One-way backup is retired while sync is on."
+                             : "Turns the backup repo into a two-way bus so edits flow between your machines automatically. Replaces one-way backup. Engine v1.4+.")
+                            .font(Typography.caption).foregroundStyle(ThemeColor.textTertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if syncOn {
+                            Text("Add another Mac: install Svod there and run `svod-engine clone <repo-url> ~/Svod/\(vaultID ?? "default") \(vaultID ?? "default")` before first launch, then enable sync on it too.")
+                                .font(Typography.caption2).foregroundStyle(ThemeColor.textTertiary)
+                                .textSelection(.enabled)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
                     .disabled(busy)
                 }
 
@@ -118,11 +179,15 @@ struct SyncBackupSettingsView: View {
                             return "Backup failed"
                         } } }
                             .disabled((config?.backupRemote ?? "").isEmpty)
-                        Button("Sync now") { Task { await run("Syncing") { let a = try await client.syncNow(vault: vaultID); return syncMessage(a) } } }
+                        Button("Sync now") { Task { await run("Syncing") {
+                            let a = try await client.syncNow(vault: vaultID)
+                            await loadConfig()
+                            return syncMessage(a)
+                        } } }
                             .disabled(syncUnavailable)
                             .help(syncUnavailable
-                                  ? "Multi-host sync isn’t set up (no peers). This vault backs up to GitHub instead."
-                                  : "Pull and push changes with your other hosts.")
+                                  ? "Turn on “Keep this vault in sync” above first. Until then this vault only backs up one-way."
+                                  : "Fetch, merge, and push changes with your other Macs now.")
                     }
                     .disabled(busy)
                     if busy {
@@ -136,12 +201,15 @@ struct SyncBackupSettingsView: View {
                 }
 
                 Section("Sync status") {
-                    if let sync = app.engine.metrics?.sync {
-                        LabeledContent("Role", value: sync.role)
-                        if let head = sync.lastHead { LabeledContent("Last head", value: String(head.prefix(8))) }
-                        LabeledContent("Conflicts", value: String(sync.conflicts))
+                    if config?.syncEnabled == true {
+                        LabeledContent("State", value: syncStateText)
+                        if let at = lastSyncedText { LabeledContent("Last sync", value: at) }
+                        if let sync = app.engine.metrics?.sync {
+                            LabeledContent("Conflicts", value: String(sync.conflicts))
+                        }
+                        if let host = config?.hostId { LabeledContent("This Mac", value: host) }
                     } else {
-                        Text("Multi-host sync is not active.")
+                        Text("Two-way sync is off for this vault.")
                             .font(Typography.callout).foregroundStyle(ThemeColor.textTertiary)
                     }
                 }
@@ -266,6 +334,8 @@ struct SyncBackupSettingsView: View {
             autoInterval = c.backupIntervalMinutes ?? 0
             autoOnChange = c.backupOnChange
             autoOnStartup = c.backupOnStartup
+            syncOn = c.syncEnabled
+            syncInterval = c.syncIntervalMinutes ?? 0
             scheduleLoaded = true
             configUnavailable = false
         } catch let e as SvodClientError where e.isNotImplemented {
