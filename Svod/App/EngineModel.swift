@@ -116,6 +116,15 @@ public final class EngineModel: ObservableObject {
                     self.app?.latestEvent = event
                     self.app?.activity.ingest(event)
                     if event.type == .indexUpdated { await self.refreshIndex() }
+                    if event.type == .fileChanged, let path = event.data.path {
+                        // Reconcile the open note when an external writer (sync pull,
+                        // agent, watcher) touches it. Best-effort vault gate: a tagged
+                        // event for another vault is skipped; nil ⇒ active vault.
+                        let v = event.data.vault
+                        if v == nil || v == self.app?.vault.activeVaultId {
+                            await self.app?.editor.reconcileExternalChange(path: path)
+                        }
+                    }
                     if event.type == .engineStatus, event.data.ready == false {
                         self.app?.connection = .disconnected
                     }
