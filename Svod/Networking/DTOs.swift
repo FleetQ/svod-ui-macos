@@ -381,20 +381,54 @@ public struct ResolveConflictRequest: Codable, Hashable, Sendable {
 public struct SyncConfig: Codable, Hashable, Sendable {
     public var backupRemote: String?
     public var backupEnabled: Bool
+    // Auto-backup schedule (contract 0.11.0). `backupIntervalMinutes` nil/0 = no timer.
+    public var backupOnStartup: Bool
+    public var backupIntervalMinutes: Int?
+    public var backupOnChange: Bool
+    // Observable last-success markers (engine-tracked; survive restarts + scheduled runs).
+    public var lastBackupAt: String?     // ISO-8601
+    public var lastBackupHead: String?
     public var syncPeers: [String]
     public var role: String?
     public var hostId: String?
     public init(backupRemote: String? = nil, backupEnabled: Bool = false,
+                backupOnStartup: Bool = false, backupIntervalMinutes: Int? = nil,
+                backupOnChange: Bool = false, lastBackupAt: String? = nil, lastBackupHead: String? = nil,
                 syncPeers: [String] = [], role: String? = nil, hostId: String? = nil) {
         self.backupRemote = backupRemote; self.backupEnabled = backupEnabled
+        self.backupOnStartup = backupOnStartup; self.backupIntervalMinutes = backupIntervalMinutes
+        self.backupOnChange = backupOnChange; self.lastBackupAt = lastBackupAt; self.lastBackupHead = lastBackupHead
         self.syncPeers = syncPeers; self.role = role; self.hostId = hostId
+    }
+    // Tolerant decode so older engines (no schedule/marker fields) still work.
+    public init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        backupRemote = try c.decodeIfPresent(String.self, forKey: .backupRemote)
+        backupEnabled = try c.decodeIfPresent(Bool.self, forKey: .backupEnabled) ?? false
+        backupOnStartup = try c.decodeIfPresent(Bool.self, forKey: .backupOnStartup) ?? false
+        backupIntervalMinutes = try c.decodeIfPresent(Int.self, forKey: .backupIntervalMinutes)
+        backupOnChange = try c.decodeIfPresent(Bool.self, forKey: .backupOnChange) ?? false
+        lastBackupAt = try c.decodeIfPresent(String.self, forKey: .lastBackupAt)
+        lastBackupHead = try c.decodeIfPresent(String.self, forKey: .lastBackupHead)
+        syncPeers = try c.decodeIfPresent([String].self, forKey: .syncPeers) ?? []
+        role = try c.decodeIfPresent(String.self, forKey: .role)
+        hostId = try c.decodeIfPresent(String.self, forKey: .hostId)
     }
 }
 
 public struct BackupConfigRequest: Codable, Hashable, Sendable {
     public var remote: String          // a git remote URL; secrets only as Secrets refs
     public var enabled: Bool
-    public init(remote: String, enabled: Bool) { self.remote = remote; self.enabled = enabled }
+    public var backupOnStartup: Bool
+    public var backupIntervalMinutes: Int   // 0 = no timer
+    public var backupOnChange: Bool
+    public init(remote: String, enabled: Bool, backupOnStartup: Bool = false,
+                backupIntervalMinutes: Int = 0, backupOnChange: Bool = false) {
+        self.remote = remote; self.enabled = enabled
+        self.backupOnStartup = backupOnStartup
+        self.backupIntervalMinutes = backupIntervalMinutes
+        self.backupOnChange = backupOnChange
+    }
 }
 
 public struct MaintenanceAck: Codable, Hashable, Sendable {
