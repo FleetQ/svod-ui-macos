@@ -107,9 +107,15 @@ struct SyncBackupSettingsView: View {
                     HStack(spacing: Spacing.sm) {
                         Button("Reindex") { Task { await run("Reindexing") { try await client.reindex(vault: vaultID).started ? "Reindex started" : "Reindex queued" } } }
                         Button("Back up now") { Task { await run("Backing up") {
+                            let priorHead = config?.lastBackupHead
                             let a = try await client.backupNow(vault: vaultID)
                             if a.ok { await loadConfig() }   // refresh last-backup marker from the engine
-                            return a.ok ? "Backed up\(a.head.map { " · \($0.prefix(8))" } ?? "")" : "Backup failed"
+                            if a.ok { return "Backed up\(a.head.map { " · \($0.prefix(8))" } ?? "")" }
+                            // Engine reports ok:false with the current head when the push was a
+                            // no-op ("Everything up-to-date") — nothing changed since the last
+                            // backup. That's not a failure, so don't alarm the user.
+                            if let h = a.head, h == priorHead { return "Already up to date · \(h.prefix(8))" }
+                            return "Backup failed"
                         } } }
                             .disabled((config?.backupRemote ?? "").isEmpty)
                         Button("Sync now") { Task { await run("Syncing") { let a = try await client.syncNow(vault: vaultID); return syncMessage(a) } } }
