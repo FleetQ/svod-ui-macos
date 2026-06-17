@@ -13,6 +13,7 @@ struct SourcesSettingsView: View {
     @State private var results: [String: SourceSyncResult] = [:]   // id → last sync result
     @State private var addFollowSymlinks = false
     @State private var addPrune = false
+    @State private var addAutoSync = false
     @State private var unavailable = false
     @State private var busy = false
     @State private var status: String?
@@ -40,6 +41,7 @@ struct SourcesSettingsView: View {
                 Section("Add a source") {
                     Toggle("Follow symlinks inside the folder", isOn: $addFollowSymlinks)
                     Toggle("Propagate deletions (prune)", isOn: $addPrune)
+                    Toggle("Auto-sync on change (watch the folder)", isOn: $addAutoSync)
                     Button { pickAndAdd() } label: { Label("Add folder or file…", systemImage: "plus") }
                         .disabled(busy)
                 }
@@ -88,8 +90,20 @@ struct SourcesSettingsView: View {
             HStack(spacing: Spacing.xs) {
                 if s.followSymlinks { tag("symlinks") }
                 if s.prune { tag("prune") }
+                if s.autoSync {
+                    Label(s.watching ? "watching" : "watcher off",
+                          systemImage: s.watching ? "dot.radiowaves.left.and.right" : "exclamationmark.triangle")
+                        .font(Typography.caption2)
+                        .foregroundStyle(s.watching ? ThemeColor.sync : ThemeColor.warning)
+                }
                 Text(lastSynced(s)).font(Typography.caption2).foregroundStyle(ThemeColor.textTertiary)
             }
+            Toggle("Auto-sync on change", isOn: Binding(
+                get: { s.autoSync },
+                set: { on in Task { await setAutoSync(s, on) } }))
+                .toggleStyle(.switch).controlSize(.mini)
+                .font(Typography.caption)
+                .disabled(busy)
             if let r = results[s.id] { resultSummary(r) }
         }
         .padding(.vertical, Spacing.xxs)
@@ -164,12 +178,14 @@ struct SourcesSettingsView: View {
     private func add(path: String) async {
         await run {
             let s = try await client.registerSource(vault: vaultID, path: path, into: nil,
-                                                     followSymlinks: addFollowSymlinks, prune: addPrune)
+                                                     followSymlinks: addFollowSymlinks, prune: addPrune,
+                                                     autoSync: addAutoSync)
             let r = try await client.syncSource(id: s.id, vault: vaultID)   // register doesn't sync
             results[s.id] = r
             await load()
             app.refreshActiveVault()
-            return "Added “\(s.name)” — \(r.changed) file(s) synced"
+            let watch = addAutoSync ? " · watching for changes" : ""
+            return "Added “\(s.name)” — \(r.changed) file(s) synced\(watch)"
         }
     }
 
@@ -189,6 +205,16 @@ struct SourcesSettingsView: View {
             app.refreshActiveVault()
             let changed = rs.reduce(0) { $0 + $1.changed }
             return "Synced \(rs.count) source(s) — \(changed) changed"
+        }
+    }
+
+    private func setAutoSync(_ s: ExternalSource, _ on: Bool) async {
+        guard on != s.autoSync else { return }
+        await run {
+            _ = try await client.updateSource(id: s.id, vault: vaultID, autoSync: on,
+                                              followSymlinks: nil, prune: nil)
+            await load()
+            return on ? "Watching “\(s.name)” for changes" : "Auto-sync off for “\(s.name)”"
         }
     }
 

@@ -14,6 +14,8 @@ public enum EventType: String, Codable, Hashable, Sendable {
     case conflict      = "conflict"
     case engineStatus  = "engine.status"
     case agentActivity = "agent.activity"
+    case sourceSynced  = "source.synced"     // a source's auto-sync watcher ran (0.13.0)
+    case indexProgress = "index.progress"    // background embedding progress (0.13.0)
     case unknown
 
     public init(from decoder: Decoder) throws {

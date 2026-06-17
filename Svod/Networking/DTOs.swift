@@ -573,9 +573,27 @@ public struct ExternalSource: Codable, Hashable, Sendable, Identifiable {
     public var followSymlinks: Bool
     public var prune: Bool
     public var lastSyncedAt: String?     // ISO-8601, nil if never synced
-    public init(id: String, path: String, into: String, followSymlinks: Bool, prune: Bool, lastSyncedAt: String? = nil) {
+    // Auto-sync on filesystem change (contract 0.13.0). `watching` is read-only:
+    // whether a watcher is live right now.
+    public var autoSync: Bool
+    public var watching: Bool
+    public init(id: String, path: String, into: String, followSymlinks: Bool, prune: Bool,
+                lastSyncedAt: String? = nil, autoSync: Bool = false, watching: Bool = false) {
         self.id = id; self.path = path; self.into = into
         self.followSymlinks = followSymlinks; self.prune = prune; self.lastSyncedAt = lastSyncedAt
+        self.autoSync = autoSync; self.watching = watching
+    }
+    // Tolerant decode so a pre-0.13.0 engine (no autoSync/watching) still works.
+    public init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        path = try c.decode(String.self, forKey: .path)
+        into = try c.decodeIfPresent(String.self, forKey: .into) ?? ""
+        followSymlinks = try c.decodeIfPresent(Bool.self, forKey: .followSymlinks) ?? false
+        prune = try c.decodeIfPresent(Bool.self, forKey: .prune) ?? false
+        lastSyncedAt = try c.decodeIfPresent(String.self, forKey: .lastSyncedAt)
+        autoSync = try c.decodeIfPresent(Bool.self, forKey: .autoSync) ?? false
+        watching = try c.decodeIfPresent(Bool.self, forKey: .watching) ?? false
     }
     /// Display name = last path component.
     public var name: String { (path as NSString).lastPathComponent }
@@ -586,8 +604,22 @@ public struct RegisterSourceRequest: Codable, Hashable, Sendable {
     public var into: String?                // vault subpath prefix
     public var followSymlinks: Bool
     public var prune: Bool                   // propagate deletions (off by default)
-    public init(path: String, into: String? = nil, followSymlinks: Bool = false, prune: Bool = false) {
-        self.path = path; self.into = into; self.followSymlinks = followSymlinks; self.prune = prune
+    public var autoSync: Bool                // watch the source and sync on change (0.13.0)
+    public init(path: String, into: String? = nil, followSymlinks: Bool = false,
+                prune: Bool = false, autoSync: Bool = false) {
+        self.path = path; self.into = into; self.followSymlinks = followSymlinks
+        self.prune = prune; self.autoSync = autoSync
+    }
+}
+
+/// Partial update of a registered source (contract 0.13.0). Only provided fields
+/// change; toggling `autoSync` starts/stops the filesystem watcher immediately.
+public struct SourceUpdateRequest: Codable, Hashable, Sendable {
+    public var autoSync: Bool?
+    public var followSymlinks: Bool?
+    public var prune: Bool?
+    public init(autoSync: Bool? = nil, followSymlinks: Bool? = nil, prune: Bool? = nil) {
+        self.autoSync = autoSync; self.followSymlinks = followSymlinks; self.prune = prune
     }
 }
 

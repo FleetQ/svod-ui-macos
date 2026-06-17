@@ -64,7 +64,11 @@ public protocol SvodClient: AnyObject, Sendable {
     // external sources (engine v0.6.0 — re-syncable external files/dirs)
     func listSources(vault: String?) async throws -> [ExternalSource]
     @discardableResult
-    func registerSource(vault: String?, path: String, into: String?, followSymlinks: Bool, prune: Bool) async throws -> ExternalSource
+    func registerSource(vault: String?, path: String, into: String?, followSymlinks: Bool, prune: Bool, autoSync: Bool) async throws -> ExternalSource
+    /// Partial update of a source (contract 0.13.0). Toggling `autoSync` starts/stops
+    /// the filesystem watcher immediately. Throws `.notImplemented` on older engines.
+    @discardableResult
+    func updateSource(id: String, vault: String?, autoSync: Bool?, followSymlinks: Bool?, prune: Bool?) async throws -> ExternalSource
     func removeSource(id: String, vault: String?) async throws
     @discardableResult
     func syncSource(id: String, vault: String?) async throws -> SourceSyncResult
@@ -138,6 +142,11 @@ public extension SvodClient {
     @discardableResult
     func importVault(source: String, into: String? = nil, vault: String? = nil) async throws -> ImportResult {
         try await importVault(source: source, into: into, vault: vault, followSymlinks: false)
+    }
+    /// Register a source without opting into auto-sync (the pre-0.13.0 call shape).
+    @discardableResult
+    func registerSource(vault: String?, path: String, into: String?, followSymlinks: Bool, prune: Bool) async throws -> ExternalSource {
+        try await registerSource(vault: vault, path: path, into: into, followSymlinks: followSymlinks, prune: prune, autoSync: false)
     }
     /// Set the backup destination without changing the schedule (manual: no auto-backup).
     @discardableResult
