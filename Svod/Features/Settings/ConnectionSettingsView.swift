@@ -20,6 +20,12 @@ struct ConnectionSettingsView: View {
                 if let validation {
                     Text(validation).font(Typography.caption).foregroundStyle(ThemeColor.danger)
                 }
+                if !host.trimmingCharacters(in: .whitespaces).isEmpty && !hostIsLoopback {
+                    Label("Vault content would be sent over plain HTTP to a non-loopback host. Point this at a local tunnel (e.g. SSH-forwarded to 127.0.0.1), not a remote address directly.",
+                          systemImage: "exclamationmark.shield")
+                        .font(Typography.caption).foregroundStyle(ThemeColor.warning)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 HStack {
                     Button("Test") { Task { await test() } }
                         .disabled(testing)
@@ -48,6 +54,11 @@ struct ConnectionSettingsView: View {
         }
         .formStyle(.grouped)
         .onAppear { host = settings.endpointHost; port = String(settings.endpointPort) }
+    }
+
+    private var hostIsLoopback: Bool {
+        let h = host.trimmingCharacters(in: .whitespaces).lowercased()
+        return h == "127.0.0.1" || h == "localhost" || h == "::1"
     }
 
     private func apply() {

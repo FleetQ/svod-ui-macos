@@ -6,14 +6,13 @@ import AppKit
 // One-click backup setup via GitHub's OAuth **Device Flow** (no client secret, no
 // redirect URL needed). The flow runs entirely in the app:
 //   request device code → user authorizes in the browser → poll for a token →
-//   ensure a private `svod-backup-<vault>` repo exists → store the authenticated
-//   remote URL in the macOS Keychain → hand back a `keychain:` ref.
+//   ensure a private `svod-backup-<vault>` repo exists → write the authenticated
+//   remote URL to a user-only 0600 file → hand back a `file:<path>` ref.
 //
-// SECURITY: the access token is written to the Keychain locally and the engine
-// only ever receives a `keychain:<account>` REFERENCE over the (loopback) App API
-// — the raw token never crosses the API nor lands in the engine config. The
-// Keychain item is created with an open ACL (`security -A`) so the headless engine
-// can resolve it without a GUI prompt.
+// SECURITY: the access token is written to a local 0600 file (see storeRemote) and
+// the engine only ever receives a `file:<path>` REFERENCE over the (loopback) App API
+// — the raw token never crosses the API, never lands on argv (no `ps` leak), and never
+// goes into the engine config. Mirrors git credential.store / ~/.netrc.
 
 @MainActor
 final class GitHubBackup: ObservableObject {

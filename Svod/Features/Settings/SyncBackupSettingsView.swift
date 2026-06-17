@@ -313,9 +313,29 @@ struct SyncBackupSettingsView: View {
         }
     }
 
-    /// Show a calm label for a ref without leaking anything (refs carry no secret).
+    /// Show a calm label for a ref without leaking anything. Refs (file:/keychain:/env:)
+    /// carry no secret; a raw URL is mask-stripped of any embedded credentials before display.
     private func friendly(_ remote: String) -> String {
-        if remote.hasPrefix("file:") || remote.hasPrefix("keychain:") { return "a private GitHub repo" }
+        if remote.hasPrefix("file:") || remote.hasPrefix("keychain:") || remote.hasPrefix("env:") {
+            return "a private GitHub repo"
+        }
+        return Self.maskRemote(remote)
+    }
+
+    /// Strip any embedded `user[:password]@` credentials from a URL so a token set
+    /// outside this app (CLI / older version / synced peer) is never shown on screen.
+    static func maskRemote(_ remote: String) -> String {
+        guard let c = URLComponents(string: remote), (c.user != nil || c.password != nil),
+              let host = c.host else { return remote }
+        let scheme = c.scheme.map { "\($0)://" } ?? ""
+        return "\(scheme)***@\(host)\(c.path)"
+    }
+
+    /// A remote safe to seed into the editable Advanced field: refs pass through, but a
+    /// raw credential URL is withheld so the token never lands in an on-screen text field.
+    static func safeEditableRemote(_ remote: String) -> String {
+        if remote.hasPrefix("file:") || remote.hasPrefix("keychain:") || remote.hasPrefix("env:") { return remote }
+        if let c = URLComponents(string: remote), c.user != nil || c.password != nil { return "" }
         return remote
     }
 
@@ -328,7 +348,7 @@ struct SyncBackupSettingsView: View {
         do {
             let c = try await client.syncConfig(vault: vaultID)
             config = c
-            backupRemote = c.backupRemote ?? ""
+            backupRemote = Self.safeEditableRemote(c.backupRemote ?? "")
             backupEnabled = c.backupEnabled
             scheduleLoaded = false                 // suppress onChange→save while seeding
             autoInterval = c.backupIntervalMinutes ?? 0

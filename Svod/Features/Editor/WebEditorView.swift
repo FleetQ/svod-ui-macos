@@ -90,7 +90,15 @@ struct WebEditorView: NSViewRepresentable {
             case "openLink":
                 if let target = body["target"] as? String { parent.onOpenLink(target) }
             case "openExternal":
-                if let href = body["href"] as? String, let url = URL(string: href) { parent.onOpenExternal(url) }
+                // Note content can arrive from other machines via sync/sources, so it isn't
+                // fully trusted. markdown-it already blocks javascript:/data:; we additionally
+                // allow only web/mail schemes so a file:// or custom app-scheme link can't
+                // trigger an unintended local action on click.
+                if let href = body["href"] as? String, let url = URL(string: href),
+                   let scheme = url.scheme?.lowercased(),
+                   ["http", "https", "mailto"].contains(scheme) {
+                    parent.onOpenExternal(url)
+                }
             default: break
             }
         }

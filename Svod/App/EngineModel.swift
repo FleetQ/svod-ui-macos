@@ -32,6 +32,9 @@ public final class EngineModel: ObservableObject {
 
     private var eventTask: Task<Void, Never>?
     private var reconnectAttempts = 0
+    /// Guards against two overlapping `connect()` calls (reconnectNow + backoff loop)
+    /// both passing the `.connected` check while one is mid-await and opening dual sockets.
+    private var connecting = false
 
     /// launchd label for the engine agent (see dist/README.md).
     public static let launchdLabel = "dev.svod.engine"
@@ -49,6 +52,9 @@ public final class EngineModel: ObservableObject {
     public func connect() async {
         guard let app else { return }
         if case .connected = app.connection { return }
+        if connecting { return }
+        connecting = true
+        defer { connecting = false }
         app.connection = .connecting
         do {
             let ready = try await client.ready()
@@ -74,13 +80,20 @@ public final class EngineModel: ObservableObject {
         // Poll /ready for up to ~20s.
         for _ in 0..<40 {
             try? await Task.sleep(nanoseconds: 500_000_000)
+            if Task.isCancelled { return }
+            // Another path (event reconnect, manual reconnect) may have connected during
+            // the poll window — don't fight it or clobber a live connection with an error.
+            if case .connected = app.connection { return }
             if let ready = try? await client.ready(), ready.ready {
                 await connect()
                 return
             }
         }
-        app.connection = .error("Engine did not become ready in time.")
-        startError = "Timed out waiting for the engine. Check the launchd agent."
+        // Only report the timeout if we're still the one starting.
+        if case .starting = app.connection {
+            app.connection = .error("Engine did not become ready in time.")
+            startError = "Timed out waiting for the engine. Check the launchd agent."
+        }
     }
 
     /// Restart = the same kickstart-and-poll flow as `start()`.
