@@ -48,11 +48,11 @@ public protocol SvodClient: AnyObject, Sendable {
     func graph() async throws -> Graph
 
     // search
-    func search(query: String, mode: SearchMode, limit: Int?, tags: [String], pathPrefix: String?) async throws -> SearchResult
+    func search(query: String, mode: SearchMode, limit: Int?, tags: [String], pathPrefix: String?, memory: MemoryFilter) async throws -> SearchResult
     /// Federated search across ALL vaults (`across=true`). Each hit carries its `vault`.
     /// NB: `across` is referenced by the contract's SearchHit doc but is not formally
     /// declared as a /search parameter (v0.3.0) — verify against the live engine.
-    func federatedSearch(query: String, mode: SearchMode, limit: Int?, tags: [String], pathPrefix: String?) async throws -> SearchResult
+    func federatedSearch(query: String, mode: SearchMode, limit: Int?, tags: [String], pathPrefix: String?, memory: MemoryFilter) async throws -> SearchResult
 
     // vaults (engine v0.3.0 multi-vault)
     func vaults() async throws -> Vaults
@@ -137,7 +137,14 @@ public extension SvodClient {
         try await history(path: path, max: nil)
     }
     func search(query: String) async throws -> SearchResult {
-        try await search(query: query, mode: .hybrid, limit: nil, tags: [], pathPrefix: nil)
+        try await search(query: query, mode: .hybrid, limit: nil, tags: [], pathPrefix: nil, memory: .none)
+    }
+    /// Search without memory filters (the pre-0.14.0 call shape).
+    func search(query: String, mode: SearchMode, limit: Int?, tags: [String], pathPrefix: String?) async throws -> SearchResult {
+        try await search(query: query, mode: mode, limit: limit, tags: tags, pathPrefix: pathPrefix, memory: .none)
+    }
+    func federatedSearch(query: String, mode: SearchMode, limit: Int?, tags: [String], pathPrefix: String?) async throws -> SearchResult {
+        try await federatedSearch(query: query, mode: mode, limit: limit, tags: tags, pathPrefix: pathPrefix, memory: .none)
     }
     @discardableResult
     func importVault(source: String, into: String? = nil, vault: String? = nil) async throws -> ImportResult {

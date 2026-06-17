@@ -19,6 +19,17 @@ public final class EngineModel: ObservableObject {
     @Published public var metrics: Metrics?
     @Published public var startError: String?
 
+    /// Feature-detect by the engine's reported apiVersion. Returns false until
+    /// settings load, so new UI stays hidden on older/unknown engines.
+    public func apiVersionAtLeast(_ major: Int, _ minor: Int) -> Bool {
+        guard let v = settings?.apiVersion else { return false }
+        let p = v.split(separator: ".").compactMap { Int($0) }
+        guard p.count >= 2 else { return false }
+        return (p[0], p[1]) >= (major, minor)
+    }
+    /// The 0.14.0 memory primitives (typed/lifecycle search + filters).
+    public var supportsMemory: Bool { apiVersionAtLeast(0, 14) }
+
     private var eventTask: Task<Void, Never>?
     private var reconnectAttempts = 0
 

@@ -46,13 +46,16 @@ struct EditorView: View {
             EditorToolbar(model: model)
             ScrollView {
                 VStack(spacing: Spacing.lg) {
+                    MemoryBadgesBar(frontmatter: split.frontmatter) { handleOpenLink($0) }
+                        .frame(maxWidth: Spacing.readingMeasure)
+                        .padding(.horizontal, Spacing.xl)
+                        .padding(.top, Spacing.lg)
                     if !split.frontmatter.entries.isEmpty {
                         FrontmatterPanel(frontmatter: split.frontmatter) { updated in
                             recompose(frontmatter: updated, body: split.body)
                         }
                         .frame(maxWidth: Spacing.readingMeasure)
                         .padding(.horizontal, Spacing.xl)
-                        .padding(.top, Spacing.lg)
                     }
                 }
                 .frame(maxWidth: .infinity)

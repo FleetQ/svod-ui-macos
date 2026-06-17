@@ -17,6 +17,12 @@ public final class SearchModel: ObservableObject {
     @Published public var selectedIndex: Int = 0
     @Published public var filterTags: [String] = []
     @Published public var pathPrefix: String?
+    // Memory typing/lifecycle filters (contract 0.14.0). Empty/false ⇒ pre-0.14.0.
+    @Published public var filterType: String?
+    @Published public var filterStatus: String?
+    /// Reveal lifecycle-hidden notes (revoked/provisional/superseded/expired) — the
+    /// "Manage memories" escape hatch.
+    @Published public var includeAll: Bool = false
 
     /// Tag vocabulary for the filter chips (loaded lazily from `client.tags()`).
     @Published public var availableTags: [Tags.Tag] = []
@@ -33,8 +39,17 @@ public final class SearchModel: ObservableObject {
     /// of typing into one request. Cancellation is cooperative — a newer call
     /// supersedes the in-flight wait via `debounceTask`.
     private var debounceTask: Task<Void, Never>?
-    /// A tag or path filter alone is enough to search (browse by tag), even with no query.
-    private var hasActiveFilters: Bool { !filterTags.isEmpty || (pathPrefix?.isEmpty == false) }
+    /// A tag/path/memory filter alone is enough to search (browse), even with no query.
+    private var hasActiveFilters: Bool {
+        !filterTags.isEmpty || (pathPrefix?.isEmpty == false) || memoryFilter.isActive
+    }
+
+    /// The memory typing/lifecycle filter assembled from the published state.
+    public var memoryFilter: MemoryFilter {
+        MemoryFilter(type: filterType?.isEmpty == true ? nil : filterType,
+                     status: filterStatus?.isEmpty == true ? nil : filterStatus,
+                     includeAll: includeAll)
+    }
 
     public func search(debounce: Duration = .milliseconds(180)) {
         debounceTask?.cancel()
@@ -60,16 +75,19 @@ public final class SearchModel: ObservableObject {
             if allVaults {
                 do {
                     r = try await client.federatedSearch(query: q, mode: mode, limit: limit,
-                                                         tags: filterTags, pathPrefix: pathPrefix)
+                                                         tags: filterTags, pathPrefix: pathPrefix,
+                                                         memory: memoryFilter)
                 } catch let e as SvodClientError where e.isNotImplemented {
                     // Engine doesn't support across=true yet — fall back to single-vault.
                     r = try await client.search(query: q, mode: mode, limit: limit,
-                                                tags: filterTags, pathPrefix: pathPrefix)
+                                                tags: filterTags, pathPrefix: pathPrefix,
+                                                memory: memoryFilter)
                     self.errorMessage = "All-vaults search is not yet available on this engine. Showing active-vault results."
                 }
             } else {
                 r = try await client.search(query: q, mode: mode, limit: limit,
-                                            tags: filterTags, pathPrefix: pathPrefix)
+                                            tags: filterTags, pathPrefix: pathPrefix,
+                                            memory: memoryFilter)
             }
             // The engine returns per-chunk/per-heading hits, so a note can appear many
             // times (very visible when browsing by tag). Collapse to one row per note,
