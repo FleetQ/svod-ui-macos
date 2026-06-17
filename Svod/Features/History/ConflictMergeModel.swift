@@ -129,10 +129,14 @@ final class ConflictMergeModel: ObservableObject {
         do {
             let result = try await client.writeFile(path: body.path, content: merged,
                                                     expectedRevision: body.current)
-            // Keep the editor coherent with what we just wrote.
-            app?.editor.file = FileContent(path: result.path, revision: result.revision, content: merged)
-            app?.editor.draft = merged
-            app?.editor.dirty = false
+            // Keep the editor coherent with what we just wrote — but only if it's still
+            // showing this note. If the user navigated to a different note, don't clobber
+            // that buffer with the merged content of another file.
+            if app?.editor.file?.path == body.path || app?.selectedPath == body.path {
+                app?.editor.file = FileContent(path: result.path, revision: result.revision, content: merged)
+                app?.editor.draft = merged
+                app?.editor.dirty = false
+            }
             return true
         } catch let SvodClientError.conflict(newBody) {
             // It moved again underneath us; re-seat on the newer "theirs".

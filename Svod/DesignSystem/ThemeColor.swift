@@ -28,13 +28,19 @@ public enum ThemeColor {
     public static let borderSubtle    = dyn(dark: 0x2E343E, light: 0xD8D5CD)
     public static let borderStrong    = dyn(dark: 0x3A424E, light: 0xC2BEB3)
 
-    // MARK: text (all ≥ 4.5:1 on `surface` in their appearance)
+    // MARK: text (primary/secondary/tertiary all ≥ 4.5:1 on `surface` in their appearance)
     public static let textPrimary     = dyn(dark: 0xECEDEF, light: 0x1B1D21)
     public static let textSecondary   = dyn(dark: 0xA8AEB8, light: 0x55585F)
-    public static let textTertiary    = dyn(dark: 0x767C87, light: 0x83868D)
+    // Tertiary still carries real informational text (paths, timestamps, sub-labels),
+    // so it must clear AA, not just read as decoration. These values stay ≥ 4.5:1 on
+    // every surface it lands on (surface, raised, hover wash, selected, window bg) in
+    // both themes — verified, not eyeballed.
+    public static let textTertiary    = dyn(dark: 0x8A909A, light: 0x65686F)
     public static let textDisabled    = dyn(dark: 0x4E545E, light: 0xAEB0B5)
-    /// Text drawn on top of the accent fill.
-    public static let textOnAccent    = dyn(dark: 0xF3F6FB, light: 0xFFFFFF)
+    /// Text drawn on top of the accent fill. The dark accent is light-blue, so white
+    /// text only reaches 2.5:1 — dark ink on it clears AA (~7:1). Light accent is dark
+    /// enough to carry white (~4.9:1).
+    public static let textOnAccent    = dyn(dark: 0x10141B, light: 0xFFFFFF)
 
     // MARK: accent (one, calm desaturated indigo-blue)
     public static let accent          = dyn(dark: 0x6FA0E6, light: 0x3D6FC4)
@@ -66,7 +72,7 @@ public enum ThemeColor {
     public static let diffDel         = dyn(dark: 0xE39A93, light: 0xB23A30)
     public static let diffDelBg       = dyn(dark: 0x2A1816, light: 0xFBE6E3)
     public static let diffHunk        = dyn(dark: 0x6FA0E6, light: 0x3D6FC4)
-    public static let diffMeta        = dyn(dark: 0x767C87, light: 0x83868D)
+    public static let diffMeta        = dyn(dark: 0x8A909A, light: 0x65686F)
 
     // MARK: link styling
     public static let link            = dyn(dark: 0x7FB0EE, light: 0x2F66BE)

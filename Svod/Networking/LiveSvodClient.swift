@@ -21,10 +21,12 @@ public final class LiveSvodClient: SvodClient, @unchecked Sendable {
             self.session = session
         } else {
             let cfg = URLSessionConfiguration.ephemeral
-            // 30s base (cold /file/links can take ~10s); engine-down is detected instantly
-            // via connection-refused on loopback, so a longer idle timeout doesn't slow that.
-            // Long git ops (backup/sync/import/reindex) override this per-request (see send/sendNoBody).
-            cfg.timeoutIntervalForRequest = 30
+            // 60s base: a cold first tree/metrics/links on a large vault (tens of thousands
+            // of docs) warms the git working set + index and can take 30–60s. Engine-down is
+            // still detected instantly via connection-refused on loopback (not subject to this
+            // timeout), so the wider window doesn't slow offline detection. Long git ops
+            // (backup/sync/import/reindex) override this per-request (see send/sendNoBody).
+            cfg.timeoutIntervalForRequest = 60
             cfg.timeoutIntervalForResource = 600
             cfg.waitsForConnectivity = false
             cfg.requestCachePolicy = .reloadIgnoringLocalCacheData
@@ -267,6 +269,23 @@ public final class LiveSvodClient: SvodClient, @unchecked Sendable {
         let decoder = self.decoder
         return AsyncThrowingStream { continuation in
             task.resume()
+            // Keepalive: a half-open loopback socket (engine crash without a FIN) otherwise
+            // leaves `receive()` blocked forever — no .failure ever fires, so the caller's
+            // reconnect never triggers and the app sits "connected" with a dead stream. A
+            // periodic ping surfaces the dead socket as an error so the stream finishes.
+            let pinger = Task {
+                while !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: 15_000_000_000)
+                    if Task.isCancelled { break }
+                    let alive: Bool = await withCheckedContinuation { cc in
+                        task.sendPing { error in cc.resume(returning: error == nil) }
+                    }
+                    if !alive {
+                        continuation.finish(throwing: URLError(.networkConnectionLost))
+                        break
+                    }
+                }
+            }
             func receive() {
                 task.receive { result in
                     switch result {
@@ -288,6 +307,7 @@ public final class LiveSvodClient: SvodClient, @unchecked Sendable {
             }
             receive()
             continuation.onTermination = { _ in
+                pinger.cancel()
                 task.cancel(with: .goingAway, reason: nil)
             }
         }

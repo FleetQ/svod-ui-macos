@@ -312,22 +312,29 @@ private struct TreeNodeRow: View {
         }
     }
 
-    /// Recursively soft-delete every note in the folder. Continues past a single
-    /// failure and surfaces the first error; the engine serializes the writes.
+    /// Recursively soft-delete every note in the folder. Continues past failures and
+    /// reports how many of the total couldn't be deleted (not just the first error), so
+    /// a partial failure isn't silently hidden. The engine serializes the writes.
     private func deleteFolder() async {
+        let paths = notePaths(node)
+        var failed = 0
         var firstError: String?
-        for path in notePaths(node) {
+        for path in paths {
             do {
                 try await trash(path)
                 if app.selectedPath == path { app.selectedPath = nil }
             } catch let e as SvodClientError {
-                if firstError == nil { firstError = e.errorDescription }
+                failed += 1; if firstError == nil { firstError = e.errorDescription }
             } catch {
-                if firstError == nil { firstError = error.localizedDescription }
+                failed += 1; if firstError == nil { firstError = error.localizedDescription }
             }
         }
         app.refreshActiveVault()
-        deleteError = firstError
+        if failed > 0 {
+            deleteError = failed == 1
+                ? (firstError ?? "One note couldn’t be deleted.")
+                : "\(failed) of \(paths.count) notes couldn’t be deleted. \(firstError ?? "")"
+        }
     }
 
     /// Soft-delete one note. The engine requires the current revision (optimistic

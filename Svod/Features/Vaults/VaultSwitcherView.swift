@@ -86,16 +86,31 @@ struct VaultSwitcherView: View {
         }
     }
 
-    // Text-based indicator inside menu items (SwiftUI menus don't render Circle well)
+    // Text-based indicator inside menu items (SwiftUI menus don't render Circle well).
+    // Uses a shape-distinct glyph per state — not color alone — so the status survives
+    // for color-blind users and VoiceOver (via the label).
     @ViewBuilder private func syncDotLabel(_ s: SyncStatus) -> some View {
         if s.conflicts > 0 {
             Text("⚠ \(s.conflicts)")
                 .font(Typography.caption)
                 .foregroundStyle(ThemeColor.conflict)
-        } else if dotColor(s) != nil {
-            Text("●")
+                .accessibilityLabel(dotHelp(s))
+        } else if let c = dotColor(s) {
+            Text(dotGlyph(s))
                 .font(Typography.caption)
-                .foregroundStyle(dotColor(s)!)
+                .foregroundStyle(c)
+                .accessibilityLabel(dotHelp(s))
+        }
+    }
+
+    /// Shape-distinct glyph per sync state (✓ in sync, ↻ syncing, ◦ offline, ⚠ error).
+    private func dotGlyph(_ s: SyncStatus) -> String {
+        switch s.syncStatus {
+        case "syncing": return "↻"
+        case "offline": return "◦"
+        case "error":   return "⚠"
+        case "inSync":  return "✓"
+        default:        return "✓"
         }
     }
 

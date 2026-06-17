@@ -66,11 +66,12 @@ struct ConflictsListView: View {
     @ViewBuilder
     private var content: some View {
         if let error = model.errorMessage {
-            errorState(error)
+            ErrorStateView(message: error) { Task { await model.load() } }
         } else if model.isLoading && model.items.isEmpty {
             LoadingStateView("Loading conflicts…")
         } else if model.items.isEmpty {
-            emptyState
+            EmptyStateView(icon: "checkmark.seal", title: "No conflicts",
+                           message: "All vaults are in sync.")
         } else {
             list
         }
@@ -89,38 +90,6 @@ struct ConflictsListView: View {
         }
     }
 
-    private var emptyState: some View {
-        VStack(spacing: Spacing.md) {
-            Image(systemName: "checkmark.seal")
-                .font(.system(size: 32))
-                .foregroundStyle(ThemeColor.accent)
-            Text("No conflicts")
-                .font(Typography.headline)
-                .foregroundStyle(ThemeColor.textPrimary)
-            Text("All vaults are in sync.")
-                .font(Typography.body)
-                .foregroundStyle(ThemeColor.textSecondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("No sync conflicts. All vaults are in sync.")
-    }
-
-    private func errorState(_ message: String) -> some View {
-        VStack(spacing: Spacing.md) {
-            Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 28))
-                .foregroundStyle(ThemeColor.warning)
-            Text(message)
-                .font(Typography.body)
-                .foregroundStyle(ThemeColor.textSecondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 320)
-            Button("Retry") { Task { await model.load() } }
-                .buttonStyle(SvodButtonStyle(.secondary))
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
 }
 
 // MARK: - Conflict row
