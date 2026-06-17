@@ -26,10 +26,58 @@ struct SearchFiltersBar: View {
                 }
                 pathPrefixField
             }
+            if app.engine.supportsMemory {
+                memoryFilters
+            }
             if !model.availableTags.isEmpty {
                 tagChips
             }
         }
+    }
+
+    // MARK: memory typing / lifecycle (contract 0.14.0)
+    private let memoryTypes = ["policy", "preference", "fact", "episode", "note"]
+    private let memoryStatuses = ["active", "provisional", "revoked"]
+
+    private var memoryFilters: some View {
+        HStack(spacing: Spacing.sm) {
+            memoryMenu(label: "Type", value: model.filterType, options: memoryTypes) {
+                model.filterType = $0; model.search()
+            }
+            memoryMenu(label: "Status", value: model.filterStatus, options: memoryStatuses) {
+                model.filterStatus = $0; model.search()
+            }
+            Button {
+                model.includeAll.toggle(); model.search()
+            } label: {
+                MemoryToggleChip(label: "Show hidden", systemImage: "eye.trianglebadge.exclamationmark",
+                                 active: model.includeAll)
+            }
+            .buttonStyle(.plain)
+            .help("Reveal revoked, provisional, superseded and expired memories")
+            .accessibilityLabel("Show hidden memories")
+            .accessibilityAddTraits(model.includeAll ? [.isButton, .isSelected] : .isButton)
+        }
+    }
+
+    private func memoryMenu(label: String, value: String?, options: [String],
+                            set: @escaping (String?) -> Void) -> some View {
+        Menu {
+            Button("Any \(label.lowercased())") { set(nil) }
+            Divider()
+            ForEach(options, id: \.self) { opt in
+                Button { set(opt) } label: {
+                    if value == opt { Label(opt.capitalized, systemImage: "checkmark") }
+                    else { Text(opt.capitalized) }
+                }
+            }
+        } label: {
+            MemoryToggleChip(label: value?.capitalized ?? label,
+                             systemImage: label == "Type" ? "tag" : "circle.lefthalf.filled",
+                             active: value != nil)
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
     }
 
     // MARK: all vaults toggle
@@ -125,6 +173,26 @@ private struct AllVaultsChip: View {
                 .imageScale(.small)
             Text("All vaults")
                 .font(Typography.caption)
+        }
+        .foregroundStyle(active ? ThemeColor.textOnAccent : ThemeColor.textSecondary)
+        .padding(.horizontal, Spacing.sm)
+        .padding(.vertical, Spacing.xxs)
+        .background(active ? ThemeColor.accent : ThemeColor.surfaceHover, in: Capsule())
+        .overlay(Capsule().strokeBorder(active ? .clear : ThemeColor.borderSubtle))
+        .animation(Motion.quick, value: active)
+    }
+}
+
+// MARK: - MemoryToggleChip (type/status menus + show-hidden toggle)
+private struct MemoryToggleChip: View {
+    let label: String
+    let systemImage: String
+    let active: Bool
+
+    var body: some View {
+        HStack(spacing: Spacing.xxs) {
+            Image(systemName: systemImage).imageScale(.small)
+            Text(label).font(Typography.caption)
         }
         .foregroundStyle(active ? ThemeColor.textOnAccent : ThemeColor.textSecondary)
         .padding(.horizontal, Spacing.sm)

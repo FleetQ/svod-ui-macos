@@ -121,22 +121,27 @@ public final class LiveSvodClient: SvodClient, @unchecked Sendable {
     public func graph() async throws -> Graph { try await get("/api/v1/graph", query: vaulted()) }
 
     // MARK: search
-    public func search(query: String, mode: SearchMode, limit: Int?, tags: [String], pathPrefix: String?) async throws -> SearchResult {
-        try await get("/api/v1/search", query: vaulted(searchItems(query, mode, limit, tags, pathPrefix)))
+    public func search(query: String, mode: SearchMode, limit: Int?, tags: [String], pathPrefix: String?, memory: MemoryFilter) async throws -> SearchResult {
+        try await get("/api/v1/search", query: vaulted(searchItems(query, mode, limit, tags, pathPrefix, memory)))
     }
 
-    public func federatedSearch(query: String, mode: SearchMode, limit: Int?, tags: [String], pathPrefix: String?) async throws -> SearchResult {
-        var q = searchItems(query, mode, limit, tags, pathPrefix)
+    public func federatedSearch(query: String, mode: SearchMode, limit: Int?, tags: [String], pathPrefix: String?, memory: MemoryFilter) async throws -> SearchResult {
+        var q = searchItems(query, mode, limit, tags, pathPrefix, memory)
         q.append(.init(name: "across", value: "true"))   // federate over all vaults
         return try await get("/api/v1/search", query: q)
     }
 
-    private func searchItems(_ query: String, _ mode: SearchMode, _ limit: Int?, _ tags: [String], _ pathPrefix: String?) -> [URLQueryItem] {
+    private func searchItems(_ query: String, _ mode: SearchMode, _ limit: Int?, _ tags: [String], _ pathPrefix: String?, _ memory: MemoryFilter) -> [URLQueryItem] {
         var q = [URLQueryItem(name: "q", value: query),
                  URLQueryItem(name: "mode", value: mode.rawValue)]
         if let limit { q.append(.init(name: "limit", value: String(limit))) }
         for t in tags { q.append(.init(name: "tags", value: t)) }
         if let pathPrefix, !pathPrefix.isEmpty { q.append(.init(name: "pathPrefix", value: pathPrefix)) }
+        // Memory typing/lifecycle (contract 0.14.0); omitted when unset so older
+        // engines see exactly the pre-0.14.0 query.
+        if let t = memory.type, !t.isEmpty { q.append(.init(name: "type", value: t)) }
+        if let s = memory.status, !s.isEmpty { q.append(.init(name: "status", value: s)) }
+        if memory.includeAll { q.append(.init(name: "includeAll", value: "true")) }
         return q
     }
 

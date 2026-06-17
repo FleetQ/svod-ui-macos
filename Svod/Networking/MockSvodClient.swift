@@ -130,22 +130,24 @@ public final class MockSvodClient: SvodClient, @unchecked Sendable {
     }
 
     // MARK: search
-    public func search(query: String, mode: SearchMode, limit: Int?, tags: [String], pathPrefix: String?) async throws -> SearchResult {
+    public func search(query: String, mode: SearchMode, limit: Int?, tags: [String], pathPrefix: String?, memory: MemoryFilter) async throws -> SearchResult {
         try await gate()
-        if behavior == .empty || query.isEmpty {
+        let q = query.isEmpty && memory.isActive ? "memory" : query
+        if behavior == .empty || q.isEmpty {
             return SearchResult(mode: mode.rawValue.uppercased(), hits: [])
         }
-        return SearchResult(mode: mode.rawValue.uppercased(), hits: Self.hits(for: query, vault: currentVault, tagged: false))
+        return SearchResult(mode: mode.rawValue.uppercased(), hits: Self.hits(for: q, vault: currentVault, tagged: false))
     }
 
-    public func federatedSearch(query: String, mode: SearchMode, limit: Int?, tags: [String], pathPrefix: String?) async throws -> SearchResult {
+    public func federatedSearch(query: String, mode: SearchMode, limit: Int?, tags: [String], pathPrefix: String?, memory: MemoryFilter) async throws -> SearchResult {
         try await gate()
-        if behavior == .empty || query.isEmpty {
+        let q = query.isEmpty && memory.isActive ? "memory" : query
+        if behavior == .empty || q.isEmpty {
             return SearchResult(mode: mode.rawValue.uppercased(), hits: [])
         }
         // Hits from every vault, each tagged with its `vault`.
-        let all = Self.hits(for: query, vault: "notes", tagged: true)
-                + Self.hits(for: query, vault: "research", tagged: true)
+        let all = Self.hits(for: q, vault: "notes", tagged: true)
+                + Self.hits(for: q, vault: "research", tagged: true)
         return SearchResult(mode: mode.rawValue.uppercased(), hits: all)
     }
 

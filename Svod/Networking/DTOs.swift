@@ -133,6 +133,21 @@ public enum SearchMode: String, Codable, Hashable, Sendable, CaseIterable {
     }
 }
 
+/// Memory typing/lifecycle filters for /search (contract 0.14.0). All optional;
+/// `.none` reproduces pre-0.14.0 behavior. `type`/`status` match a note's reserved
+/// frontmatter keys; `includeAll` bypasses the engine's default hiding of
+/// revoked/provisional/superseded/expired memories.
+public struct MemoryFilter: Hashable, Sendable {
+    public var type: String?
+    public var status: String?
+    public var includeAll: Bool
+    public init(type: String? = nil, status: String? = nil, includeAll: Bool = false) {
+        self.type = type; self.status = status; self.includeAll = includeAll
+    }
+    public static let none = MemoryFilter()
+    public var isActive: Bool { type != nil || status != nil || includeAll }
+}
+
 public struct SearchResult: Codable, Hashable, Sendable {
     public var mode: String              // response enum is UPPERCASE: HYBRID/KEYWORD/SEMANTIC
     public var hits: [SearchHit]
