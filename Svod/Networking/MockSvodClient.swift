@@ -226,12 +226,22 @@ public final class MockSvodClient: SvodClient, @unchecked Sendable {
         try await gate(); return Self.mockSources
     }
     @discardableResult
-    public func registerSource(vault: String?, path: String, into: String?, followSymlinks: Bool, prune: Bool) async throws -> ExternalSource {
+    public func registerSource(vault: String?, path: String, into: String?, followSymlinks: Bool, prune: Bool, autoSync: Bool) async throws -> ExternalSource {
         try await gate()
         let s = ExternalSource(id: "src-\(abs(path.hashValue) % 100000)", path: path,
                                into: into ?? (path as NSString).lastPathComponent,
-                               followSymlinks: followSymlinks, prune: prune, lastSyncedAt: nil)
+                               followSymlinks: followSymlinks, prune: prune, lastSyncedAt: nil,
+                               autoSync: autoSync, watching: autoSync)
         Self.mockSources.append(s); return s
+    }
+    public func updateSource(id: String, vault: String?, autoSync: Bool?, followSymlinks: Bool?, prune: Bool?) async throws -> ExternalSource {
+        try await gate()
+        guard let i = Self.mockSources.firstIndex(where: { $0.id == id }) else { throw SvodClientError.notFound }
+        var s = Self.mockSources[i]
+        if let a = autoSync { s.autoSync = a; s.watching = a }
+        if let f = followSymlinks { s.followSymlinks = f }
+        if let p = prune { s.prune = p }
+        Self.mockSources[i] = s; return s
     }
     public func removeSource(id: String, vault: String?) async throws {
         try await gate(); Self.mockSources.removeAll { $0.id == id }
