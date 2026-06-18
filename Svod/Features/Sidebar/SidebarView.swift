@@ -9,9 +9,23 @@ import SwiftUI
 // (arrows move, ←/→ collapse/expand dirs) and VoiceOver-labeled.
 // ════════════════════════════════════════════════════════════════════════
 
+/// The sidebar's two navigators. Notes (the file tree + saved searches) and Tags
+/// (the tag taxonomy) used to stack in one scroll; splitting them into tabs keeps
+/// the tree uncluttered and gives the (often long) tag list room to breathe.
+enum SidebarTab: String, CaseIterable, Identifiable {
+    case notes, tags
+    var id: String { rawValue }
+    var label: String { self == .notes ? "Notes" : "Tags" }
+    var icon: String { self == .notes ? "folder" : "number" }
+}
+
 struct SidebarView: View {
     @ObservedObject var model: SidebarModel
     @EnvironmentObject var app: AppModel
+
+    /// Persisted across launches so the user returns to the navigator they last used.
+    @AppStorage("svod.sidebar.tab") private var tab: SidebarTab = .notes
+    @State private var tagFilter = ""
 
     var body: some View {
         Group {
@@ -45,15 +59,94 @@ struct SidebarView: View {
     private var content: some View {
         VStack(spacing: 0) {
             if app.vault.hasMultipleVaults { vaultHeader }
+            tabPicker
+            Divider().overlay(ThemeColor.separator)
+            switch tab {
+            case .notes: notesTab
+            case .tags:  tagsTab
+            }
+        }
+    }
+
+    // Segmented switcher between the Notes tree and the Tags taxonomy.
+    private var tabPicker: some View {
+        Picker("Sidebar section", selection: $tab) {
+            ForEach(SidebarTab.allCases) { t in
+                Text(t.label).tag(t)
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .padding(.horizontal, Spacing.sm)
+        .padding(.vertical, Spacing.xs)
+        .accessibilityLabel("Sidebar section")
+    }
+
+    // MARK: Notes tab — just the file tree
+    private var notesTab: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: Spacing.lg) {
+                fileTreeSection
+            }
+            .padding(Spacing.sm)
+        }
+    }
+
+    // MARK: Tags tab — saved searches + the tag taxonomy (the "find by metadata" pane,
+    // as opposed to Notes which is the file structure). Tags get a filter for large vaults.
+    @ViewBuilder private var tagsTab: some View {
+        if model.tags.isEmpty && model.savedSearches.isEmpty {
+            EmptyStateView(icon: "number", title: "No tags yet",
+                           message: "Tags from your notes show up here. Add #tags or a frontmatter tags: list.")
+        } else {
             ScrollView {
                 VStack(alignment: .leading, spacing: Spacing.lg) {
-                    fileTreeSection
-                    if !model.tags.isEmpty { tagSection }
                     if !model.savedSearches.isEmpty { savedSearchSection }
+                    if !model.tags.isEmpty { tagsList }
                 }
                 .padding(Spacing.sm)
             }
         }
+    }
+
+    private var tagsList: some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            SectionLabel("Tags", systemImage: "number")
+                .padding(.horizontal, Spacing.sm)
+            if model.tags.count > 12 { tagFilterField }
+            LazyVStack(alignment: .leading, spacing: Spacing.xxs) {
+                ForEach(filteredTags) { tag in tagRow(tag) }
+            }
+        }
+    }
+
+    private var tagFilterField: some View {
+        HStack(spacing: Spacing.xs) {
+            Image(systemName: "magnifyingglass")
+                .imageScale(.small)
+                .foregroundStyle(ThemeColor.textTertiary)
+            TextField("Filter tags", text: $tagFilter)
+                .textFieldStyle(.plain)
+                .font(Typography.callout)
+            if !tagFilter.isEmpty {
+                Button { tagFilter = "" } label: {
+                    Image(systemName: "xmark.circle.fill").imageScale(.small)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(ThemeColor.textTertiary)
+                .accessibilityLabel("Clear tag filter")
+            }
+        }
+        .padding(.horizontal, Spacing.sm)
+        .padding(.vertical, Spacing.xs)
+        .background(ThemeColor.surfaceRaised, in: RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
+        .padding(.horizontal, Spacing.sm)
+    }
+
+    private var filteredTags: [Tags.Tag] {
+        let q = tagFilter.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !q.isEmpty else { return model.tags }
+        return model.tags.filter { $0.tag.lowercased().contains(q) }
     }
 
     // Small vault context strip — only shown when multi-vault so single-vault setups
@@ -91,27 +184,21 @@ struct SidebarView: View {
     }
 
     // MARK: tags
-    private var tagSection: some View {
-        VStack(alignment: .leading, spacing: Spacing.xs) {
-            SectionLabel("Tags", systemImage: "number")
-                .padding(.horizontal, Spacing.sm)
-            ForEach(model.tags) { tag in
-                ListRow(title: "#\(tag.tag)", isSelected: false) {
-                    Image(systemName: "number")
-                        .imageScale(.small)
-                        .foregroundStyle(ThemeColor.textTertiary)
-                } trailing: {
-                    Text("\(tag.count)")
-                        .font(Typography.caption)
-                        .foregroundStyle(ThemeColor.textTertiary)
-                        .monospacedDigit()
-                } action: {
-                    selectTag(tag.tag)
-                }
-                .accessibilityLabel("Tag \(tag.tag), \(tag.count) notes")
-                .accessibilityHint("Searches notes with this tag")
-            }
+    private func tagRow(_ tag: Tags.Tag) -> some View {
+        ListRow(title: "#\(tag.tag)", isSelected: false) {
+            Image(systemName: "number")
+                .imageScale(.small)
+                .foregroundStyle(ThemeColor.textTertiary)
+        } trailing: {
+            Text("\(tag.count)")
+                .font(Typography.caption)
+                .foregroundStyle(ThemeColor.textTertiary)
+                .monospacedDigit()
+        } action: {
+            selectTag(tag.tag)
         }
+        .accessibilityLabel("Tag \(tag.tag), \(tag.count) notes")
+        .accessibilityHint("Searches notes with this tag")
     }
 
     // MARK: saved searches
