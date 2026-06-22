@@ -56,6 +56,12 @@ public protocol SvodClient: AnyObject, Sendable {
 
     // vaults (engine v0.3.0 multi-vault)
     func vaults() async throws -> Vaults
+    /// Create + register a new (empty) vault and return it (engine ≥ contract 0.15.0).
+    /// `name`/`path` are optional (nil ⇒ engine defaults). Throws `.notImplemented`/
+    /// `.notFound` on engines that predate the create endpoint, and `.conflict`/409
+    /// (surfaced as `.http(409,…)`) when the id already exists.
+    @discardableResult
+    func createVault(id: String, name: String?, path: String?) async throws -> Vault
     /// One-shot Obsidian import into `vault` (nil ⇒ default). Idempotent.
     /// `followSymlinks` (contract 0.7.0) materializes symlinks instead of skipping them.
     @discardableResult

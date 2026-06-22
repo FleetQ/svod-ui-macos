@@ -42,6 +42,8 @@ public final class AppModel: ObservableObject {
     /// Import sheet presented from RootView (not from the toolbar menu — a `.sheet`
     /// inside a Menu never presents). Set true from the vault switcher / sidebar.
     @Published public var importPresented = false
+    /// "New Vault" sheet, presented from RootView for the same reason as `importPresented`.
+    @Published public var newVaultPresented = false
 
     // Feature sub-models (one per teammate)
     public let editor: EditorModel

@@ -151,6 +151,14 @@ public final class LiveSvodClient: SvodClient, @unchecked Sendable {
     public func vaults() async throws -> Vaults { try await get("/api/v1/vaults") }
 
     @discardableResult
+    public func createVault(id: String, name: String?, path: String?) async throws -> Vault {
+        // Not per-vault scoped (creates one) — no ?vault=. Allow a little headroom
+        // for git init + initial index on a fresh repo.
+        try await send("/api/v1/vaults", method: "POST",
+                       body: CreateVaultRequest(id: id, name: name, path: path), timeout: 60)
+    }
+
+    @discardableResult
     public func importVault(source: String, into: String?, vault: String?, followSymlinks: Bool) async throws -> ImportResult {
         try await send("/api/v1/import", method: "POST",
                        body: ImportRequest(source: source, into: into, vault: vault, followSymlinks: followSymlinks),

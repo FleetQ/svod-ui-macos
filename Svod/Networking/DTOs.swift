@@ -554,6 +554,18 @@ public struct Vaults: Codable, Hashable, Sendable {
 
 public typealias Vault = Vaults.Vault
 
+/// Create a brand-new (empty) vault. `id` is a unique slug; `name` defaults to it.
+/// `path` is an optional absolute location for the vault's git repo — omit to let
+/// the engine pick a default. (engine ≥ contract 0.15.0 — `POST /api/v1/vaults`.)
+public struct CreateVaultRequest: Codable, Hashable, Sendable {
+    public var id: String
+    public var name: String?
+    public var path: String?
+    public init(id: String, name: String? = nil, path: String? = nil) {
+        self.id = id; self.name = name; self.path = path
+    }
+}
+
 /// Import an Obsidian vault directory (local path) into a Svod vault.
 public struct ImportRequest: Codable, Hashable, Sendable {
     public var source: String            // local filesystem path to the Obsidian vault

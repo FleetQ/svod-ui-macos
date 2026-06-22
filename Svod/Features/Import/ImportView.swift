@@ -21,11 +21,11 @@ struct ImportView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
             HStack {
-                Text("Import Obsidian Vault").font(Typography.headline)
+                Text("Import Notes into \(targetVaultName)").font(Typography.headline)
                 Spacer()
                 Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
             }
-            Text("Markdown + attachments are imported into **\(targetVaultName)** through the engine. Re-running is idempotent; differing files are skipped, never clobbered.")
+            Text("Adds the markdown + attachments from an Obsidian folder to **\(targetVaultName)** through the engine. This does not create a new vault — use **New Vault** for that. Re-running is idempotent; differing files are skipped, never clobbered.")
                 .font(Typography.callout)
                 .foregroundStyle(ThemeColor.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)

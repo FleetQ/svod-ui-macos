@@ -197,6 +197,10 @@ public final class MockSvodClient: SvodClient, @unchecked Sendable {
     }
 
     // MARK: vaults / import
+    // Vaults created via createVault during a preview/offline session — appended so
+    // the switcher reflects them without a real engine.
+    private static var mockCreatedVaults: [Vault] = []
+
     public func vaults() async throws -> Vaults {
         try await gate()
         return Vaults(vaults: [
@@ -204,7 +208,16 @@ public final class MockSvodClient: SvodClient, @unchecked Sendable {
                   sync: SyncStatus(role: "authority", lastHead: "32af73c", conflicts: 1)),
             .init(id: "research", name: "Research", isDefault: false,
                   sync: SyncStatus(role: "follower", lastHead: "9f1c0d2", conflicts: 0)),
-        ])
+        ] + Self.mockCreatedVaults)
+    }
+
+    @discardableResult
+    public func createVault(id: String, name: String?, path: String?) async throws -> Vault {
+        try await gate()
+        let v = Vault(id: id, name: name ?? id, isDefault: false,
+                      sync: SyncStatus(role: "solo", lastHead: nil, conflicts: 0))
+        Self.mockCreatedVaults.append(v)
+        return v
     }
 
     @discardableResult

@@ -36,6 +36,9 @@ struct RootView: View {
         .sheet(isPresented: $app.importPresented) {
             ImportView().environmentObject(app)
         }
+        .sheet(isPresented: $app.newVaultPresented) {
+            NewVaultView().environmentObject(app)
+        }
         .onChange(of: columnVisibility) { _, new in
             app.sidebarVisible = (new != .detailOnly)
         }

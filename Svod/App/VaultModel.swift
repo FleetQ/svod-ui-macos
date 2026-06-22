@@ -65,6 +65,17 @@ public final class VaultModel: ObservableObject {
         loadState = .loaded
     }
 
+    /// Create a new vault via the engine, refresh the list, and switch to it.
+    /// Re-throws so the caller (NewVaultView) can surface engine errors —
+    /// duplicate id, an unsupported engine, a bad path, etc.
+    @discardableResult
+    public func createVault(id: String, name: String?, path: String?) async throws -> Vault {
+        let created = try await client.createVault(id: id, name: name, path: path)
+        await load()                 // re-fetch the authoritative list (now includes it)
+        switchVault(created.id)      // make the new vault active
+        return created
+    }
+
     /// Switch the active vault and reload vault-scoped state across the app.
     public func switchVault(_ id: String) {
         guard id != activeVaultId, vaults.contains(where: { $0.id == id }) else { return }

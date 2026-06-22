@@ -12,8 +12,10 @@ struct VaultSwitcherView: View {
     @EnvironmentObject var app: AppModel
 
     var body: some View {
-        if model.hasMultipleVaults {
-            Menu {
+        // Always shown — even with a single vault — so "New Vault" and "Import" are
+        // reachable. (Switch targets only appear when there's more than one vault.)
+        Menu {
+            if model.hasMultipleVaults {
                 ForEach(model.vaults) { v in
                     Button { model.switchVault(v.id) } label: {
                         HStack {
@@ -31,24 +33,25 @@ struct VaultSwitcherView: View {
                     }
                 }
                 Divider()
-                importMenuItem
-            } label: {
-                HStack(spacing: Spacing.xxs) {
-                    Image(systemName: "tray.full")
-                        .imageScale(.small)
-                    Text(model.activeVault?.name ?? "Vault")
-                        .font(Typography.callout)
-                    if let s = model.activeVault?.sync { inlineSyncDot(s) }
-                    Image(systemName: "chevron.down")
-                        .imageScale(.small)
-                        .foregroundStyle(ThemeColor.textTertiary)
-                }
             }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
-            .help("Switch vault — active: \(model.activeVault?.name ?? "—")")
-            .accessibilityLabel("Vault switcher, current vault \(model.activeVault?.name ?? "none")")
+            newVaultMenuItem
+            importMenuItem
+        } label: {
+            HStack(spacing: Spacing.xxs) {
+                Image(systemName: "tray.full")
+                    .imageScale(.small)
+                Text(model.activeVault?.name ?? "Vault")
+                    .font(Typography.callout)
+                if let s = model.activeVault?.sync { inlineSyncDot(s) }
+                Image(systemName: "chevron.down")
+                    .imageScale(.small)
+                    .foregroundStyle(ThemeColor.textTertiary)
+            }
         }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help("Vault: \(model.activeVault?.name ?? "—") — switch, create, or import")
+        .accessibilityLabel("Vault menu, current vault \(model.activeVault?.name ?? "none")")
     }
 
     // Dot color for a vault's live sync state. nil ⇒ not synced (solo) ⇒ no dot,
@@ -114,13 +117,28 @@ struct VaultSwitcherView: View {
         }
     }
 
-    // "Import Obsidian Vault…" — a `.sheet` inside a Menu never presents, so this
-    // only flips an AppModel flag; RootView owns the actual sheet.
+    // "New Vault…" — creates a fresh, empty vault. Hidden on engines without
+    // multi-vault support (where creation isn't possible). A `.sheet` inside a Menu
+    // never presents, so this only flips an AppModel flag; RootView owns the sheet.
+    @ViewBuilder private var newVaultMenuItem: some View {
+        if !model.multiVaultUnavailable {
+            Button {
+                app.newVaultPresented = true
+            } label: {
+                Label("New Vault…", systemImage: "plus.rectangle.on.folder")
+            }
+        }
+    }
+
+    // "Import notes into <vault>…" — adds Obsidian notes to the ACTIVE vault; it does
+    // NOT create a vault (use "New Vault" for that). Flips an AppModel flag; RootView
+    // owns the actual sheet (a `.sheet` inside a Menu never presents).
     private var importMenuItem: some View {
         Button {
             app.importPresented = true
         } label: {
-            Label("Import Obsidian Vault…", systemImage: "folder.badge.plus")
+            Label("Import notes into \(model.activeVault?.name ?? "this vault")…",
+                  systemImage: "square.and.arrow.down")
         }
     }
 }
