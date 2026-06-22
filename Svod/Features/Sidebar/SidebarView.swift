@@ -246,8 +246,8 @@ private struct SidebarImportButton: View {
                 .foregroundStyle(ThemeColor.textTertiary)
         }
         .buttonStyle(.plain)
-        .help("Import Obsidian Vault…")
-        .accessibilityLabel("Import Obsidian Vault")
+        .help("Import Obsidian notes into \(app.vault.activeVault?.name ?? "this vault")…")
+        .accessibilityLabel("Import notes into current vault")
     }
 }
 
@@ -346,6 +346,7 @@ private struct TreeNodeRow: View {
     }
 
     // Right-click menu: folders expand/collapse; notes open or delete (with confirm).
+    // Both carry "Copy Path" — the vault-relative path is the reference you hand an AI agent.
     @ViewBuilder private var contextMenuContent: some View {
         if isDir {
             Button {
@@ -354,6 +355,8 @@ private struct TreeNodeRow: View {
                 Label(isExpanded ? "Collapse" : "Expand",
                       systemImage: isExpanded ? "chevron.down" : "chevron.right")
             }
+            Divider()
+            copyPathButton
             if noteCount > 0 {
                 Divider()
                 Button(role: .destructive) { confirmingDelete = true } label: {
@@ -363,10 +366,21 @@ private struct TreeNodeRow: View {
         } else {
             Button { app.open(path: node.path) } label: { Label("Open", systemImage: "doc.text") }
             Divider()
+            copyPathButton
+            Divider()
             Button(role: .destructive) { confirmingDelete = true } label: {
                 Label("Delete Note…", systemImage: "trash")
             }
         }
+    }
+
+    private var copyPathButton: some View {
+        Button { copyPath() } label: { Label("Copy Path", systemImage: "doc.on.doc") }
+    }
+
+    private func copyPath() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(node.path, forType: .string)
     }
 
     // All note (file) paths under this node, recursively. 1 for a file.
