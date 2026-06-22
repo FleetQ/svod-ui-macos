@@ -76,6 +76,20 @@ public final class VaultModel: ObservableObject {
         return created
     }
 
+    /// Delete a vault. The engine unregisters it (and drops it from the persistent
+    /// config) and returns its on-disk path; we then move that directory to the OS
+    /// Trash. Reloads the list and re-points the app at the default vault, since the
+    /// deleted one may have been active. Re-throws engine errors for the caller.
+    public func deleteVault(_ id: String) async throws {
+        let result = try await client.deleteVault(id: id, deleteFiles: false)
+        // Engine released its lock before responding — safe to move the leftover dir.
+        if !result.filesDeleted, let p = result.path, !p.isEmpty {
+            try? FileManager.default.trashItem(at: URL(fileURLWithPath: p), resultingItemURL: nil)
+        }
+        await load()             // refreshes the list; picks the default if active became invalid
+        app?.didSwitchVault()    // reload vault-scoped panes for the (possibly new) active vault
+    }
+
     /// Switch the active vault and reload vault-scoped state across the app.
     public func switchVault(_ id: String) {
         guard id != activeVaultId, vaults.contains(where: { $0.id == id }) else { return }

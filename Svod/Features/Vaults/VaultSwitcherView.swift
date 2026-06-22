@@ -36,6 +36,7 @@ struct VaultSwitcherView: View {
             }
             newVaultMenuItem
             importMenuItem
+            deleteVaultMenuItem
         } label: {
             HStack(spacing: Spacing.xxs) {
                 Image(systemName: "tray.full")
@@ -126,6 +127,21 @@ struct VaultSwitcherView: View {
                 app.newVaultPresented = true
             } label: {
                 Label("New Vault…", systemImage: "plus.rectangle.on.folder")
+            }
+        }
+    }
+
+    // "Delete <active>…" — removes the ACTIVE vault (files go to the Trash). Hidden for
+    // the default vault and when only one vault exists (the engine refuses both → 409),
+    // and on engines without multi-vault support. Confirmation is owned by RootView.
+    @ViewBuilder private var deleteVaultMenuItem: some View {
+        if !model.multiVaultUnavailable, model.hasMultipleVaults,
+           let v = model.activeVault, !v.isDefault {
+            Divider()
+            Button(role: .destructive) {
+                app.vaultPendingDeletion = v
+            } label: {
+                Label("Delete “\(v.name)”…", systemImage: "trash")
             }
         }
     }

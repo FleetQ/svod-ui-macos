@@ -159,6 +159,14 @@ public final class LiveSvodClient: SvodClient, @unchecked Sendable {
     }
 
     @discardableResult
+    public func deleteVault(id: String, deleteFiles: Bool) async throws -> DeleteVaultResult {
+        let enc = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
+        var q: [URLQueryItem] = []
+        if deleteFiles { q.append(.init(name: "deleteFiles", value: "true")) }
+        return try await sendNoBody("/api/v1/vaults/\(enc)", method: "DELETE", query: q, timeout: 60)
+    }
+
+    @discardableResult
     public func importVault(source: String, into: String?, vault: String?, followSymlinks: Bool) async throws -> ImportResult {
         try await send("/api/v1/import", method: "POST",
                        body: ImportRequest(source: source, into: into, vault: vault, followSymlinks: followSymlinks),

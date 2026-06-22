@@ -566,6 +566,18 @@ public struct CreateVaultRequest: Codable, Hashable, Sendable {
     }
 }
 
+/// Result of deleting a vault (`DELETE /api/v1/vaults/{id}`). `path` is the vault's
+/// former on-disk directory; when `filesDeleted` is false the engine left it in place
+/// so the app can move it to the OS Trash. (engine ≥ contract 0.16.0.)
+public struct DeleteVaultResult: Codable, Hashable, Sendable {
+    public var id: String
+    public var path: String?
+    public var filesDeleted: Bool
+    public init(id: String, path: String? = nil, filesDeleted: Bool = false) {
+        self.id = id; self.path = path; self.filesDeleted = filesDeleted
+    }
+}
+
 /// Import an Obsidian vault directory (local path) into a Svod vault.
 public struct ImportRequest: Codable, Hashable, Sendable {
     public var source: String            // local filesystem path to the Obsidian vault

@@ -62,6 +62,12 @@ public protocol SvodClient: AnyObject, Sendable {
     /// (surfaced as `.http(409,…)`) when the id already exists.
     @discardableResult
     func createVault(id: String, name: String?, path: String?) async throws -> Vault
+    /// Delete + unregister a vault (engine ≥ contract 0.16.0). With `deleteFiles` false
+    /// the engine leaves the directory on disk and returns its `path` so the app can move
+    /// it to the OS Trash. Throws `.notImplemented`/`.notFound` on older engines, and
+    /// `.http(409,…)` when refusing the default or last-remaining vault.
+    @discardableResult
+    func deleteVault(id: String, deleteFiles: Bool) async throws -> DeleteVaultResult
     /// One-shot Obsidian import into `vault` (nil ⇒ default). Idempotent.
     /// `followSymlinks` (contract 0.7.0) materializes symlinks instead of skipping them.
     @discardableResult
@@ -155,6 +161,11 @@ public extension SvodClient {
     @discardableResult
     func importVault(source: String, into: String? = nil, vault: String? = nil) async throws -> ImportResult {
         try await importVault(source: source, into: into, vault: vault, followSymlinks: false)
+    }
+    /// Delete a vault, leaving its files on disk for the app to trash (the default).
+    @discardableResult
+    func deleteVault(id: String) async throws -> DeleteVaultResult {
+        try await deleteVault(id: id, deleteFiles: false)
     }
     /// Register a source without opting into auto-sync (the pre-0.13.0 call shape).
     @discardableResult

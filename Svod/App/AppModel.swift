@@ -44,6 +44,10 @@ public final class AppModel: ObservableObject {
     @Published public var importPresented = false
     /// "New Vault" sheet, presented from RootView for the same reason as `importPresented`.
     @Published public var newVaultPresented = false
+    /// Non-nil ⇒ RootView shows a confirmation dialog to delete this vault.
+    @Published public var vaultPendingDeletion: Vault?
+    /// Surfaced in a RootView alert when a vault action (delete) fails.
+    @Published public var vaultActionError: String?
 
     // Feature sub-models (one per teammate)
     public let editor: EditorModel
@@ -173,4 +177,25 @@ public final class AppModel: ObservableObject {
     /// Refresh vault-scoped panes (tree, graph) without switching vaults — e.g.
     /// after an import added files to the active vault.
     public func refreshActiveVault() { reloadEpoch &+= 1 }
+
+    /// Confirmed deletion of a vault (called from the RootView confirmation dialog).
+    /// Moves its files to the Trash via VaultModel; maps engine errors to a banner.
+    public func deleteVault(_ v: Vault) {
+        Task {
+            do {
+                try await vault.deleteVault(v.id)
+            } catch let e as SvodClientError {
+                switch e {
+                case .notImplemented, .notFound:
+                    vaultActionError = "Deleting vaults needs a newer Svod engine."
+                case .http(409, _):
+                    vaultActionError = "You can’t delete the default vault or the last remaining vault."
+                default:
+                    vaultActionError = e.errorDescription
+                }
+            } catch {
+                vaultActionError = error.localizedDescription
+            }
+        }
+    }
 }

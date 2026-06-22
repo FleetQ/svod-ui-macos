@@ -39,6 +39,24 @@ struct RootView: View {
         .sheet(isPresented: $app.newVaultPresented) {
             NewVaultView().environmentObject(app)
         }
+        .confirmationDialog(
+            "Move “\(app.vaultPendingDeletion?.name ?? "")” to the Trash?",
+            isPresented: Binding(get: { app.vaultPendingDeletion != nil },
+                                 set: { if !$0 { app.vaultPendingDeletion = nil } }),
+            presenting: app.vaultPendingDeletion
+        ) { v in
+            Button("Move to Trash", role: .destructive) { app.deleteVault(v) }
+            Button("Cancel", role: .cancel) { app.vaultPendingDeletion = nil }
+        } message: { _ in
+            Text("Its notes and history move to the macOS Trash and the vault is removed from Svod. You can restore it from the Trash.")
+        }
+        .alert("Couldn’t delete vault",
+               isPresented: Binding(get: { app.vaultActionError != nil },
+                                    set: { if !$0 { app.vaultActionError = nil } })) {
+            Button("OK", role: .cancel) { app.vaultActionError = nil }
+        } message: {
+            Text(app.vaultActionError ?? "")
+        }
         .onChange(of: columnVisibility) { _, new in
             app.sidebarVisible = (new != .detailOnly)
         }

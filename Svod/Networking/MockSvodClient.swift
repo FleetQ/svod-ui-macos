@@ -221,6 +221,13 @@ public final class MockSvodClient: SvodClient, @unchecked Sendable {
     }
 
     @discardableResult
+    public func deleteVault(id: String, deleteFiles: Bool) async throws -> DeleteVaultResult {
+        try await gate()
+        Self.mockCreatedVaults.removeAll { $0.id == id }
+        return DeleteVaultResult(id: id, path: nil, filesDeleted: deleteFiles)
+    }
+
+    @discardableResult
     public func importVault(source: String, into: String?, vault: String?, followSymlinks: Bool) async throws -> ImportResult {
         try await gate()
         let base = (into.map { $0 + "/" } ?? "")
