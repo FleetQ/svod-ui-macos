@@ -168,7 +168,9 @@ public final class LiveSvodClient: SvodClient, @unchecked Sendable {
 
     @discardableResult
     public func importVault(source: String, into: String?, vault: String?, followSymlinks: Bool) async throws -> ImportResult {
-        try await send("/api/v1/import", method: "POST",
+        // The engine resolves the import target from the `?vault=` query param, not the body —
+        // without it, every import lands in the default vault regardless of the active one.
+        try await send("/api/v1/import", method: "POST", query: vaulted(vault: vault),
                        body: ImportRequest(source: source, into: into, vault: vault, followSymlinks: followSymlinks),
                        timeout: 180)
     }
