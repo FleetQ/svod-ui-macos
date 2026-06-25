@@ -49,6 +49,14 @@ struct SidebarView: View {
             guard app.reloadEpoch > 0 else { return }
             await model.load()
         }
+        .onChange(of: app.latestEvent) { _, event in
+            guard let event else { return }
+            switch event.type {
+            case .commitCreated, .fileChanged, .sourceSynced:
+                model.scheduleRefresh()
+            default: break
+            }
+        }
     }
 
     private var isEmptyTree: Bool {
@@ -171,8 +179,20 @@ struct SidebarView: View {
     // MARK: file tree
     private var fileTreeSection: some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
-            SectionLabel("Notes", systemImage: "folder")
-                .padding(.horizontal, Spacing.sm)
+            HStack {
+                SectionLabel("Notes", systemImage: "folder")
+                Spacer(minLength: 0)
+                Button { Task { await model.load() } } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .imageScale(.small)
+                        .foregroundStyle(ThemeColor.textTertiary)
+                }
+                .buttonStyle(.plain)
+                .disabled(model.isLoading)
+                .help("Refresh file list")
+                .accessibilityLabel("Refresh notes")
+            }
+            .padding(.horizontal, Spacing.sm)
             if let root = model.tree {
                 // Render the root's children directly; the "vault" root itself is
                 // implied by the pane, so we don't show it as a row.

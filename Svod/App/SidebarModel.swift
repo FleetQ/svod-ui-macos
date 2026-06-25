@@ -31,6 +31,19 @@ public final class SidebarModel: ObservableObject {
 
     public init(client: SvodClient) { self.client = client }
 
+    private var refreshTask: Task<Void, Never>?
+
+    /// Called from the view on relevant WS events. Debounces 500 ms so a burst of
+    /// agent writes (many commit.created events) collapses into a single tree reload.
+    func scheduleRefresh() {
+        refreshTask?.cancel()
+        refreshTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled, let self else { return }
+            await self.load()
+        }
+    }
+
     public func load() async {
         isLoading = true; errorMessage = nil
         defer { isLoading = false }
