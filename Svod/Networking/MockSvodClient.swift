@@ -227,6 +227,48 @@ public final class MockSvodClient: SvodClient, @unchecked Sendable {
         return DeleteVaultResult(id: id, path: nil, filesDeleted: deleteFiles)
     }
 
+    // MARK: MCP agents — LLM access
+    private static var mockAgents: [Agent] = [
+        Agent(agentId: "svod-foundry", name: "Svod Foundry", role: "WRITE",
+              vaults: ["notes", "research"], tokenRef: "file:/tmp/foundry-token.secret"),
+        Agent(agentId: "claude-desktop", name: "Claude Desktop", role: "WRITE",
+              vaults: ["notes"], tokenRef: "file:/tmp/claude-desktop-token.secret"),
+    ]
+
+    public func agents() async throws -> AgentsInfo {
+        try await gate()
+        return AgentsInfo(agents: Self.mockAgents, mcpPort: 7620, mcpUrl: "http://127.0.0.1:7620")
+    }
+
+    @discardableResult
+    public func createAgent(_ request: CreateAgentRequest) async throws -> Agent {
+        try await gate()
+        let a = Agent(agentId: request.agentId, name: request.name ?? request.agentId,
+                      role: request.role, vaults: request.vaults, tokenRef: request.tokenRef, prompt: request.prompt)
+        Self.mockAgents.append(a)
+        return a
+    }
+
+    @discardableResult
+    public func updateAgent(id: String, _ request: UpdateAgentRequest) async throws -> Agent {
+        try await gate()
+        guard let i = Self.mockAgents.firstIndex(where: { $0.agentId == id }) else { throw SvodClientError.notFound }
+        var a = Self.mockAgents[i]
+        if let v = request.name { a.name = v }
+        if let v = request.role { a.role = v }
+        if let v = request.vaults { a.vaults = v }
+        if let v = request.tokenRef { a.tokenRef = v }
+        if let v = request.prompt { a.prompt = v }
+        Self.mockAgents[i] = a
+        return a
+    }
+
+    public func deleteAgent(id: String) async throws {
+        try await gate()
+        guard Self.mockAgents.contains(where: { $0.agentId == id }) else { throw SvodClientError.notFound }
+        Self.mockAgents.removeAll { $0.agentId == id }
+    }
+
     @discardableResult
     public func importVault(source: String, into: String?, vault: String?, followSymlinks: Bool) async throws -> ImportResult {
         try await gate()

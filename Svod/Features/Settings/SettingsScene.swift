@@ -30,7 +30,7 @@ struct SettingsScene: View {
     @State private var section: Section = .connection
 
     enum Section: String, CaseIterable, Identifiable {
-        case connection, engine, syncBackup, sources, indexing, appearance, editor, search, activity, graph, about
+        case connection, engine, syncBackup, sources, indexing, llmAccess, appearance, editor, search, activity, graph, about
         var id: String { rawValue }
         var title: String {
             switch self {
@@ -39,6 +39,7 @@ struct SettingsScene: View {
             case .syncBackup: "Sync & Backup"
             case .sources:    "Sources"
             case .indexing:   "Indexing"
+            case .llmAccess:  "LLM Access"
             case .appearance: "Appearance"
             case .editor:     "Editor"
             case .search:     "Search"
@@ -54,6 +55,7 @@ struct SettingsScene: View {
             case .syncBackup: "arrow.triangle.2.circlepath"
             case .sources:    "externaldrive.badge.plus"
             case .indexing:   "cpu"
+            case .llmAccess:  "key.horizontal"
             case .appearance: "paintpalette"
             case .editor:     "square.and.pencil"
             case .search:     "magnifyingglass"
@@ -88,6 +90,7 @@ struct SettingsScene: View {
         case .syncBackup: SyncBackupSettingsView()
         case .sources:    SourcesSettingsView()
         case .indexing:   IndexingSettingsView()
+        case .llmAccess:  AgentsSettingsView()
         case .appearance: AppearanceSettingsView(settings: app.settings)
         case .editor:     EditorSettingsView(settings: app.settings)
         case .search:     SearchSettingsView(settings: app.settings)

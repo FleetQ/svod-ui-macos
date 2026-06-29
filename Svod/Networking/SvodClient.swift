@@ -73,6 +73,21 @@ public protocol SvodClient: AnyObject, Sendable {
     @discardableResult
     func importVault(source: String, into: String?, vault: String?, followSymlinks: Bool) async throws -> ImportResult
 
+    // MCP agents — LLM access (engine ≥ contract 0.17.0)
+    /// List the authorized MCP clients (LLMs) plus the MCP endpoint URL/port.
+    /// Throws `.notImplemented`/`.notFound` on engines that predate the endpoint.
+    func agents() async throws -> AgentsInfo
+    /// Authorize a new LLM. `tokenRef` must be a Secrets ref (`file:`/`env:`/`keychain:`) —
+    /// a raw token is rejected (`.http(422,…)`). Duplicate id ⇒ `.http(409,…)`.
+    @discardableResult
+    func createAgent(_ request: CreateAgentRequest) async throws -> Agent
+    /// Update an agent's role/vaults/name/prompt/token (omitted fields unchanged).
+    /// Unknown id ⇒ `.notFound`.
+    @discardableResult
+    func updateAgent(id: String, _ request: UpdateAgentRequest) async throws -> Agent
+    /// Revoke an LLM's access. Unknown id ⇒ `.notFound`.
+    func deleteAgent(id: String) async throws
+
     // external sources (engine v0.6.0 — re-syncable external files/dirs)
     func listSources(vault: String?) async throws -> [ExternalSource]
     @discardableResult

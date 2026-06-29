@@ -166,6 +166,25 @@ public final class LiveSvodClient: SvodClient, @unchecked Sendable {
         return try await sendNoBody("/api/v1/vaults/\(enc)", method: "DELETE", query: q, timeout: 60)
     }
 
+    // MARK: MCP agents — LLM access (not vault-scoped)
+    public func agents() async throws -> AgentsInfo { try await get("/api/v1/agents") }
+
+    @discardableResult
+    public func createAgent(_ request: CreateAgentRequest) async throws -> Agent {
+        try await send("/api/v1/agents", method: "POST", body: request, timeout: 30)
+    }
+
+    @discardableResult
+    public func updateAgent(id: String, _ request: UpdateAgentRequest) async throws -> Agent {
+        let enc = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
+        return try await send("/api/v1/agents/\(enc)", method: "PUT", body: request, timeout: 30)
+    }
+
+    public func deleteAgent(id: String) async throws {
+        let enc = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
+        try await sendNoResult("/api/v1/agents/\(enc)", method: "DELETE")
+    }
+
     @discardableResult
     public func importVault(source: String, into: String?, vault: String?, followSymlinks: Bool) async throws -> ImportResult {
         // The engine resolves the import target from the `?vault=` query param, not the body —

@@ -578,6 +578,74 @@ public struct DeleteVaultResult: Codable, Hashable, Sendable {
     }
 }
 
+// MARK: - MCP agents (LLM access — contract 0.17.0)
+
+/// One authorized MCP client (an LLM). `tokenRef` is the engine-side Secrets
+/// reference (`file:`/`env:`/`keychain:`) — never the resolved secret; the app
+/// reads a local `file:` ref itself to Copy the actual token. `prompt` is optional
+/// convenience metadata (a system prompt to paste into the client); the engine does
+/// not enforce it.
+public struct Agent: Codable, Hashable, Sendable, Identifiable {
+    public var agentId: String
+    public var name: String
+    public var role: String              // READ_ONLY | WRITE
+    public var vaults: [String]
+    public var tokenRef: String
+    public var prompt: String?
+    public var id: String { agentId }
+    public init(agentId: String, name: String, role: String, vaults: [String], tokenRef: String, prompt: String? = nil) {
+        self.agentId = agentId; self.name = name; self.role = role
+        self.vaults = vaults; self.tokenRef = tokenRef; self.prompt = prompt
+    }
+    enum CodingKeys: String, CodingKey { case agentId, name, role, vaults, tokenRef, prompt }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        agentId = try c.decode(String.self, forKey: .agentId)
+        name = (try? c.decode(String.self, forKey: .name)) ?? agentId
+        role = (try? c.decode(String.self, forKey: .role)) ?? "READ_ONLY"
+        vaults = (try? c.decode([String].self, forKey: .vaults)) ?? []
+        tokenRef = (try? c.decode(String.self, forKey: .tokenRef)) ?? ""
+        prompt = try? c.decodeIfPresent(String.self, forKey: .prompt)
+    }
+}
+
+/// The `GET /api/v1/agents` envelope: the agents plus how an LLM reaches the MCP
+/// endpoint (`mcpUrl` is shown for Copy; `mcpPort` for callers that build their own URL).
+public struct AgentsInfo: Codable, Hashable, Sendable {
+    public var agents: [Agent]
+    public var mcpPort: Int?
+    public var mcpUrl: String?
+    public init(agents: [Agent], mcpPort: Int? = nil, mcpUrl: String? = nil) {
+        self.agents = agents; self.mcpPort = mcpPort; self.mcpUrl = mcpUrl
+    }
+}
+
+/// `tokenRef` must be a Secrets reference — a raw token is rejected by the engine (422).
+public struct CreateAgentRequest: Codable, Hashable, Sendable {
+    public var agentId: String
+    public var name: String?
+    public var role: String
+    public var vaults: [String]
+    public var tokenRef: String
+    public var prompt: String?
+    public init(agentId: String, name: String? = nil, role: String, vaults: [String], tokenRef: String, prompt: String? = nil) {
+        self.agentId = agentId; self.name = name; self.role = role
+        self.vaults = vaults; self.tokenRef = tokenRef; self.prompt = prompt
+    }
+}
+
+/// Partial update — omitted fields are left unchanged engine-side.
+public struct UpdateAgentRequest: Codable, Hashable, Sendable {
+    public var name: String?
+    public var role: String?
+    public var vaults: [String]?
+    public var tokenRef: String?
+    public var prompt: String?
+    public init(name: String? = nil, role: String? = nil, vaults: [String]? = nil, tokenRef: String? = nil, prompt: String? = nil) {
+        self.name = name; self.role = role; self.vaults = vaults; self.tokenRef = tokenRef; self.prompt = prompt
+    }
+}
+
 /// Import an Obsidian vault directory (local path) into a Svod vault.
 public struct ImportRequest: Codable, Hashable, Sendable {
     public var source: String            // local filesystem path to the Obsidian vault
