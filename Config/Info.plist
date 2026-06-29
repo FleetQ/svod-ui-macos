@@ -24,12 +24,12 @@
 	<string></string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
-	<!-- Sparkle auto-update. The appcast is served from the newest GitHub Release's
-	     appcast.xml asset; updates are verified against this EdDSA public key. The
-	     matching private key lives in the login Keychain (export for CI with
-	     generate_keys -x). See docs/release-signing.md. -->
+	<!-- Sparkle auto-update. The appcast is a single file committed at the repo's
+	     main branch (served via raw.githubusercontent); Scripts/release.sh prepends a
+	     signed <item> per release (same model as the Lattice app). Updates are verified
+	     against this EdDSA public key; the private key lives in the login Keychain. -->
 	<key>SUFeedURL</key>
-	<string>https://github.com/FleetQ/svod-ui-macos/releases/latest/download/appcast.xml</string>
+	<string>https://raw.githubusercontent.com/FleetQ/svod-ui-macos/main/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>tjHC4d/AW4IC/MJKOvftiezy501Fe+rq/rAGg2r4EhQ=</string>
 	<key>SUEnableAutomaticChecks</key>

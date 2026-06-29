@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel>
+    <title>Svod for macOS</title>
+    <link>https://raw.githubusercontent.com/FleetQ/svod-ui-macos/main/appcast.xml</link>
+    <description>Auto-update feed for the Svod macOS desktop app.</description>
+    <language>en</language>
+  </channel>
+</rss>
