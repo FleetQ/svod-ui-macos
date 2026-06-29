@@ -646,6 +646,57 @@ public struct UpdateAgentRequest: Codable, Hashable, Sendable {
     }
 }
 
+// MARK: - Engine self-update (contract 0.18.0)
+
+/// Result of `GET /api/v1/update/check`. `updateAvailable` = a newer engine release exists;
+/// `compatible` = it stays on the same App API major (safe to apply). `notes` carries the
+/// release body (or a reason the check couldn't reach GitHub).
+public struct UpdateCheck: Codable, Hashable, Sendable {
+    public var currentVersion: String
+    public var currentContract: String?
+    public var latestVersion: String?
+    public var updateAvailable: Bool
+    public var compatible: Bool
+    public var assetName: String?
+    public var assetUrl: String?
+    public var sha256: String?
+    public var notes: String?
+    public var publishedAt: String?
+    public init(currentVersion: String, currentContract: String? = nil, latestVersion: String? = nil,
+                updateAvailable: Bool = false, compatible: Bool = false, assetName: String? = nil,
+                assetUrl: String? = nil, sha256: String? = nil, notes: String? = nil, publishedAt: String? = nil) {
+        self.currentVersion = currentVersion; self.currentContract = currentContract
+        self.latestVersion = latestVersion; self.updateAvailable = updateAvailable; self.compatible = compatible
+        self.assetName = assetName; self.assetUrl = assetUrl; self.sha256 = sha256
+        self.notes = notes; self.publishedAt = publishedAt
+    }
+    enum CodingKeys: String, CodingKey {
+        case currentVersion, currentContract, latestVersion, updateAvailable, compatible, assetName, assetUrl, sha256, notes, publishedAt
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        currentVersion = (try? c.decode(String.self, forKey: .currentVersion)) ?? "?"
+        currentContract = try? c.decodeIfPresent(String.self, forKey: .currentContract)
+        latestVersion = try? c.decodeIfPresent(String.self, forKey: .latestVersion)
+        updateAvailable = (try? c.decode(Bool.self, forKey: .updateAvailable)) ?? false
+        compatible = (try? c.decode(Bool.self, forKey: .compatible)) ?? false
+        assetName = try? c.decodeIfPresent(String.self, forKey: .assetName)
+        assetUrl = try? c.decodeIfPresent(String.self, forKey: .assetUrl)
+        sha256 = try? c.decodeIfPresent(String.self, forKey: .sha256)
+        notes = try? c.decodeIfPresent(String.self, forKey: .notes)
+        publishedAt = try? c.decodeIfPresent(String.self, forKey: .publishedAt)
+    }
+}
+
+/// Result of `POST /api/v1/update/apply` — the engine spawned the detached self-update script.
+public struct UpdateApply: Codable, Hashable, Sendable {
+    public var started: Bool
+    public var candidateVersion: String?
+    public init(started: Bool, candidateVersion: String? = nil) {
+        self.started = started; self.candidateVersion = candidateVersion
+    }
+}
+
 /// Import an Obsidian vault directory (local path) into a Svod vault.
 public struct ImportRequest: Codable, Hashable, Sendable {
     public var source: String            // local filesystem path to the Obsidian vault

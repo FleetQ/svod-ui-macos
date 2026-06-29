@@ -73,6 +73,16 @@ public protocol SvodClient: AnyObject, Sendable {
     @discardableResult
     func importVault(source: String, into: String?, vault: String?, followSymlinks: Bool) async throws -> ImportResult
 
+    // engine self-update (engine ≥ contract 0.18.0)
+    /// Ask the engine whether a newer compatible release exists. Throws
+    /// `.notImplemented`/`.notFound` on engines that predate the endpoint.
+    func updateCheck() async throws -> UpdateCheck
+    /// Tell the engine to download + apply the latest compatible release (detached
+    /// self-update → restart). `.http(409,…)` if no update/incompatible, `.notImplemented`/501
+    /// if the engine has no updater configured.
+    @discardableResult
+    func updateApply() async throws -> UpdateApply
+
     // MCP agents — LLM access (engine ≥ contract 0.17.0)
     /// List the authorized MCP clients (LLMs) plus the MCP endpoint URL/port.
     /// Throws `.notImplemented`/`.notFound` on engines that predate the endpoint.

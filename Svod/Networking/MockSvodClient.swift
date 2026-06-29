@@ -227,6 +227,21 @@ public final class MockSvodClient: SvodClient, @unchecked Sendable {
         return DeleteVaultResult(id: id, path: nil, filesDeleted: deleteFiles)
     }
 
+    // MARK: engine self-update
+    public func updateCheck() async throws -> UpdateCheck {
+        try await gate()
+        // Default mock: engine is current. (Flip updateAvailable to preview the banner.)
+        return UpdateCheck(currentVersion: "1.7.0", currentContract: "0.18.0",
+                           latestVersion: "1.7.0", updateAvailable: false, compatible: true,
+                           notes: "Up to date.")
+    }
+
+    @discardableResult
+    public func updateApply() async throws -> UpdateApply {
+        try await gate()
+        return UpdateApply(started: true, candidateVersion: "1.7.0")
+    }
+
     // MARK: MCP agents — LLM access
     private static var mockAgents: [Agent] = [
         Agent(agentId: "svod-foundry", name: "Svod Foundry", role: "WRITE",

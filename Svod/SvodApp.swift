@@ -3,6 +3,7 @@ import SwiftUI
 @main
 struct SvodApp: App {
     @StateObject private var app = AppModel(client: LiveSvodClient())
+    @StateObject private var updater = Updater()
 
     var body: some Scene {
         WindowGroup {
@@ -19,9 +20,14 @@ struct SvodApp: App {
         SwiftUI.Settings {   // qualified: our DTO `Settings` shadows the scene
             SettingsScene()
                 .environmentObject(app)
+                .environmentObject(updater)
                 .preferredColorScheme(app.settings.themeMode.colorScheme)
         }
         .commands {
+            CommandGroup(after: .appInfo) {
+                Button("Check for Updates…") { updater.checkForUpdates() }
+                    .disabled(!updater.canCheckForUpdates)
+            }
             CommandGroup(after: .textEditing) {
                 Button("Search…") { app.toggleCommandPalette() }
                     .keyboardShortcut("k", modifiers: .command)

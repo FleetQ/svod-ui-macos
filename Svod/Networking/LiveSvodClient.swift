@@ -166,6 +166,14 @@ public final class LiveSvodClient: SvodClient, @unchecked Sendable {
         return try await sendNoBody("/api/v1/vaults/\(enc)", method: "DELETE", query: q, timeout: 60)
     }
 
+    // MARK: engine self-update (not vault-scoped)
+    public func updateCheck() async throws -> UpdateCheck { try await get("/api/v1/update/check") }
+
+    @discardableResult
+    public func updateApply() async throws -> UpdateApply {
+        try await sendNoBody("/api/v1/update/apply", method: "POST", timeout: 30)
+    }
+
     // MARK: MCP agents — LLM access (not vault-scoped)
     public func agents() async throws -> AgentsInfo { try await get("/api/v1/agents") }
 
