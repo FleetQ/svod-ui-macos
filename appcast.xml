@@ -5,5 +5,14 @@
     <link>https://raw.githubusercontent.com/FleetQ/svod-ui-macos/main/appcast.xml</link>
     <description>Auto-update feed for the Svod macOS desktop app.</description>
     <language>en</language>
+    <item>
+      <title>Version 0.2.0</title>
+      <sparkle:version>2</sparkle:version>
+      <sparkle:shortVersionString>0.2.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[<ul><li>See the GitHub release notes for v0.2.0.</li></ul>]]></description>
+      <pubDate>Mon, 29 Jun 2026 09:32:06 +0000</pubDate>
+      <enclosure url="https://github.com/FleetQ/svod-ui-macos/releases/download/v0.2.0/Svod-macOS-0.2.0.dmg" sparkle:edSignature="Aim4VqpryorWmgS4s7L0KBzJX2TkWqCUka+rKvF470E63oFSr8DKNX2ox09KFHwwiDV/pUSB+xrgSlyPnpbOAA==" length="5976250" type="application/octet-stream" />
+    </item>
   </channel>
 </rss>
