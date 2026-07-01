@@ -57,6 +57,14 @@ struct SyncBackupSettingsView: View {
         return date.map { $0.formatted(.relative(presentation: .named)) }
     }
 
+    /// Off-site freshness for the header. Once two-way sync is on, sync IS the off-site copy, so
+    /// report the last successful sync — the engine intentionally freezes the one-way backup marker
+    /// (`lastBackupAt`) while sync is on, and showing it reads as a stale "backed up weeks ago".
+    private var offsiteFreshnessText: String? {
+        if config?.syncEnabled == true { return lastSyncedText.map { "Synced \($0)" } }
+        return lastBackupText
+    }
+
     private var progressText: String {
         let t = elapsed > 0 ? " · \(elapsed)s" : ""
         let hint = elapsed >= 6 ? " — large vaults or the first push can take a while" : ""
@@ -242,12 +250,17 @@ struct SyncBackupSettingsView: View {
         switch gh.phase {
         case .idle:
             if let remote = config?.backupRemote, !remote.isEmpty {
-                Label("Backing up to \(friendly(remote))", systemImage: "checkmark.seal.fill")
+                Label(config?.syncEnabled == true ? "Syncing to \(friendly(remote))" : "Backing up to \(friendly(remote))",
+                      systemImage: "checkmark.seal.fill")
                     .font(Typography.callout).foregroundStyle(ThemeColor.sync)
-                Text(lastBackupText ?? "Not backed up yet — press “Back up now” or turn on automatic backup below.")
+                Text(offsiteFreshnessText ?? (config?.syncEnabled == true
+                     ? "Not synced yet — press “Sync now” or wait for the next cycle."
+                     : "Not backed up yet — press “Back up now” or turn on automatic backup below."))
                     .font(Typography.caption).foregroundStyle(ThemeColor.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
-                Text("Snapshots are pushed to a git ref (refs/svod/backup/\(vaultID ?? "default")) — safe and restorable, but GitHub’s web view won’t list them (it shows only branches/tags). Verify with `git ls-remote`.")
+                Text(config?.syncEnabled == true
+                     ? "This vault is pushed off-site continuously by sync (git ref refs/svod/sync/\(vaultID ?? "default")). One-way backup is retired while sync is on, so its own “last backup” time no longer advances. GitHub’s web view lists only branches/tags — verify with `git ls-remote`."
+                     : "Snapshots are pushed to a git ref (refs/svod/backup/\(vaultID ?? "default")) — safe and restorable, but GitHub’s web view won’t list them (it shows only branches/tags). Verify with `git ls-remote`.")
                     .font(Typography.caption).foregroundStyle(ThemeColor.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
                 Button("Reconnect / change account") { Task { await connectGitHub() } }
