@@ -6,6 +6,15 @@
     <description>Auto-update feed for the Svod macOS desktop app.</description>
     <language>en</language>
     <item>
+      <title>Version 0.2.4</title>
+      <sparkle:version>6</sparkle:version>
+      <sparkle:shortVersionString>0.2.4</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[<ul><li>See the GitHub release notes for v0.2.4.</li></ul>]]></description>
+      <pubDate>Thu, 02 Jul 2026 13:07:51 +0000</pubDate>
+      <enclosure url="https://github.com/FleetQ/svod-ui-macos/releases/download/v0.2.4/Svod-macOS-0.2.4.dmg" sparkle:edSignature="oNGjhZPinYIoHOmp4snPHI+c6LcWQLNa2BeaqWf44shegNYiPUp95ZTJxFLm/zNmR4Z7Np4eWi8vZqyNlsikDw==" length="6015867" type="application/octet-stream" />
+    </item>
+    <item>
       <title>Version 0.2.3</title>
       <sparkle:version>5</sparkle:version>
       <sparkle:shortVersionString>0.2.3</sparkle:shortVersionString>
