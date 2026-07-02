@@ -37,6 +37,9 @@ RunPod TEI is fine ONLY for a one-off heavy bulk embed, but queries still need a
   2. `rm -f ~/Svod/*/.git/index.lock` before exec — an uncleanly-killed engine leaves a stale git index lock; the next start dies with jgit `LockFailedException` (DirCache.lock → AddCommand) and KeepAlive crash-loops.
 - Cold boot ~75s (onnx + Lucene + embed resume); script waits up to 130s. Logs: `~/Library/Logs/svod/engine.{out,err}.log`. Vault lock: `~/Svod/<vault>/.svod/lock`.
 
+## Provider health row (app v0.2.3, 2026-07-02)
+IndexingSettingsView shows a passive health row for the APPLIED embedder: `POST /api/v1/embedder/test` (engine embeds a real test string → catches Ollama down / model not pulled / pod gone, not just TCP). Live probe returned `{ok:true,dimension:1024,latencyMs:~134}`; dead endpoint → `{ok:false}` (200, no error text). Probes on panel open, after Apply, every ~14s (7th tick of the 2s status poll); never probes the unapplied form draft. Dead provider semantics (verified/known): keyword BM25 unaffected; semantic = 0 hits (query embeds at request time); background embedding stalls then RESUMES when provider returns — vectors are kept.
+
 ## Model + RunPod notes
 - **Model for BG+EN: `BAAI/bge-m3`** (1024-dim, no prefixes, 100+ langs incl. Bulgarian). personal vault ≈ 62.6k chunks.
 - **AVOID RunPod serverless workers** (`worker-infinity-embedding`, `worker-v1-vllm`): wedge under load (jobs stuck `inProgress`, idle workers don't pick up); vLLM template defaults to wrong model (Qwen3-8B), key auto `sk-<pod-id>`.
