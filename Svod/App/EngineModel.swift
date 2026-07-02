@@ -76,9 +76,23 @@ public final class EngineModel: ObservableObject {
         guard let app else { return }
         startError = nil
         app.connection = .starting
-        kickstart()
-        // Poll /ready for up to ~20s.
-        for _ in 0..<40 {
+        // Kickstart; if the agent isn't loaded (Stop boots it out of the gui domain),
+        // bootstrap the plist back in and try again — otherwise Start after Stop can
+        // never succeed.
+        let domain = "gui/\(getuid())"
+        var status = await Self.launchctl(["kickstart", "-k", "\(domain)/\(Self.launchdLabel)"])
+        if status != 0 {
+            let plist = "\(NSHomeDirectory())/Library/LaunchAgents/\(Self.launchdLabel).plist"
+            _ = await Self.launchctl(["bootstrap", domain, plist])
+            status = await Self.launchctl(["kickstart", "\(domain)/\(Self.launchdLabel)"])
+            if status != 0 {
+                app.connection = .error("The engine's launchd agent isn't installed.")
+                startError = "Couldn't start the engine: launchd agent \(Self.launchdLabel) isn't loaded and its plist couldn't be bootstrapped."
+                return
+            }
+        }
+        // Poll /ready for up to ~90s — a cold start (semantic index check) takes 25–60s.
+        for _ in 0..<180 {
             try? await Task.sleep(nanoseconds: 500_000_000)
             if Task.isCancelled { return }
             // Another path (event reconnect, manual reconnect) may have connected during
@@ -116,16 +130,16 @@ public final class EngineModel: ObservableObject {
         Task { await connect() }
     }
 
-    /// `launchctl kickstart -k gui/<uid>/dev.svod.engine`. No-ops gracefully if the
-    /// agent isn't installed (the poll loop then times out into an error state).
-    private func kickstart() {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
-        process.arguments = ["kickstart", "-k", "gui/\(getuid())/\(Self.launchdLabel)"]
-        process.standardOutput = nil
-        process.standardError = nil
-        do { try process.run() } catch {
-            startError = "Couldn't run launchctl: \(error.localizedDescription)"
+    /// Run `launchctl` off the main actor and report its exit status (-1 ⇒ couldn't run).
+    private nonisolated static func launchctl(_ args: [String]) async -> Int32 {
+        await withCheckedContinuation { cont in
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+            process.arguments = args
+            process.standardOutput = nil
+            process.standardError = nil
+            process.terminationHandler = { cont.resume(returning: $0.terminationStatus) }
+            do { try process.run() } catch { cont.resume(returning: -1) }
         }
     }
 
