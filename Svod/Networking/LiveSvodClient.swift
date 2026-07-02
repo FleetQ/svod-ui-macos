@@ -236,6 +236,14 @@ public final class LiveSvodClient: SvodClient, @unchecked Sendable {
         try await sendNoBody("/api/v1/sources/sync", method: "POST", query: vaulted(), timeout: 180)
     }
 
+    @discardableResult
+    public func resolveSourceConflict(id: String, path: String, strategy: String, vault: String?) async throws -> SourceSyncResult {
+        let enc = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
+        struct Body: Encodable { let path: String; let strategy: String }
+        return try await send("/api/v1/sources/\(enc)/resolve", method: "POST", query: vaulted(),
+                              body: Body(path: path, strategy: strategy))
+    }
+
     // MARK: meta
     public func tags() async throws -> Tags { try await get("/api/v1/tags", query: vaulted()) }
     public func settings() async throws -> Settings { try await get("/api/v1/settings", query: vaulted()) }

@@ -105,6 +105,7 @@ struct SourcesSettingsView: View {
                 .font(Typography.caption)
                 .disabled(busy)
             if let r = results[s.id] { resultSummary(r) }
+            if !s.conflicts.isEmpty { persistedConflicts(s) }
         }
         .padding(.vertical, Spacing.xxs)
     }
@@ -129,28 +130,40 @@ struct SourcesSettingsView: View {
                     part("\(r.skipped.count) skipped", ThemeColor.conflict, r.skipped.count)
                 }
                 .font(Typography.caption2)
-                // Conflicts need attention — the vault copy was edited locally and left
-                // untouched, so surface the exact files (not just a count).
-                if !r.conflicts.isEmpty { conflictList(r.conflicts) }
+                // The diverged files themselves render in the persisted conflicts card
+                // below (with resolve actions) — the count here is just the sync summary.
             }
         }
     }
 
-    @ViewBuilder private func conflictList(_ paths: [String]) -> some View {
-        VStack(alignment: .leading, spacing: 1) {
-            Label("Kept your local edits — not overwritten:", systemImage: "exclamationmark.triangle.fill")
+    /// Diverged files (locally edited; external updates on hold) with per-file resolution.
+    /// Populated by the engine's persisted conflict set (contract 0.19.0) — on older
+    /// engines the list decodes empty and this card simply never renders.
+    @ViewBuilder private func persistedConflicts(_ s: ExternalSource) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.xxs) {
+            Label("Diverged — your edits kept, external updates on hold:", systemImage: "arrow.triangle.branch")
                 .font(Typography.caption2).foregroundStyle(ThemeColor.conflict)
-            ForEach(paths.prefix(8), id: \.self) { p in
-                Text(p).font(Typography.caption2).foregroundStyle(ThemeColor.textSecondary)
-                    .lineLimit(1).truncationMode(.middle)
+            ForEach(s.conflicts.prefix(8), id: \.self) { p in
+                HStack(spacing: Spacing.sm) {
+                    Text(p).font(Typography.caption2).foregroundStyle(ThemeColor.textSecondary)
+                        .lineLimit(1).truncationMode(.middle)
+                    Spacer(minLength: Spacing.xs)
+                    Button("Keep mine") { Task { await resolve(s, p, strategy: "keepVault") } }
+                        .buttonStyle(.plain).font(Typography.caption2).foregroundStyle(ThemeColor.accent)
+                        .help("Accept your edit as the new baseline. A future external change will surface here again.")
+                    Button("Take external") { Task { await resolve(s, p, strategy: "takeExternal") } }
+                        .buttonStyle(.plain).font(Typography.caption2).foregroundStyle(ThemeColor.accent)
+                        .help("Overwrite the vault copy with the external file's current content.")
+                }
             }
-            if paths.count > 8 {
-                Text("+ \(paths.count - 8) more").font(Typography.caption2).foregroundStyle(ThemeColor.textTertiary)
+            if s.conflicts.count > 8 {
+                Text("+ \(s.conflicts.count - 8) more").font(Typography.caption2).foregroundStyle(ThemeColor.textTertiary)
             }
         }
         .padding(Spacing.xs)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(ThemeColor.conflictSubtle, in: RoundedRectangle(cornerRadius: 6))
+        .disabled(busy)
     }
     @ViewBuilder private func part(_ label: String, _ color: Color, _ n: Int) -> some View {
         if n > 0 { Text(label).foregroundStyle(color) }
@@ -193,6 +206,7 @@ struct SourcesSettingsView: View {
         await run {
             let r = try await client.syncSource(id: s.id, vault: vaultID)
             results[s.id] = r
+            await load()   // refresh the persisted conflict badges
             app.refreshActiveVault()
             return "Synced “\(s.name)” — \(r.changed) changed\(r.conflicts.isEmpty ? "" : ", \(r.conflicts.count) conflict")"
         }
@@ -202,9 +216,21 @@ struct SourcesSettingsView: View {
         await run {
             let rs = try await client.syncAllSources(vault: vaultID)
             for r in rs { results[r.id] = r }
+            await load()   // refresh the persisted conflict badges
             app.refreshActiveVault()
             let changed = rs.reduce(0) { $0 + $1.changed }
             return "Synced \(rs.count) source(s) — \(changed) changed"
+        }
+    }
+
+    private func resolve(_ s: ExternalSource, _ path: String, strategy: String) async {
+        await run {
+            _ = try await client.resolveSourceConflict(id: s.id, path: path, strategy: strategy, vault: vaultID)
+            await load()
+            app.refreshActiveVault()
+            let name = (path as NSString).lastPathComponent
+            return strategy == "takeExternal" ? "Took the external version of “\(name)”."
+                                              : "Kept your version of “\(name)” — future external changes will surface again."
         }
     }
 

@@ -111,6 +111,10 @@ public protocol SvodClient: AnyObject, Sendable {
     func syncSource(id: String, vault: String?) async throws -> SourceSyncResult
     @discardableResult
     func syncAllSources(vault: String?) async throws -> [SourceSyncResult]
+    /// Resolve one conflicted (locally edited) synced path (contract 0.19.0):
+    /// strategy "takeExternal" (external wins once) or "keepVault" (accept the local edit).
+    @discardableResult
+    func resolveSourceConflict(id: String, path: String, strategy: String, vault: String?) async throws -> SourceSyncResult
     /// Read a note from a SPECIFIC vault without changing the active vault — for
     /// cross-vault [[vault:note]] previews / navigation.
     func readFile(path: String, inVault vault: String) async throws -> FileContent

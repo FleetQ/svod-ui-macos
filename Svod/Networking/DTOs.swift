@@ -735,11 +735,14 @@ public struct ExternalSource: Codable, Hashable, Sendable, Identifiable {
     // whether a watcher is live right now.
     public var autoSync: Bool
     public var watching: Bool
+    /// Vault paths whose local edits blocked the external update at the last sync (0.19.0).
+    public var conflicts: [String]
     public init(id: String, path: String, into: String, followSymlinks: Bool, prune: Bool,
-                lastSyncedAt: String? = nil, autoSync: Bool = false, watching: Bool = false) {
+                lastSyncedAt: String? = nil, autoSync: Bool = false, watching: Bool = false,
+                conflicts: [String] = []) {
         self.id = id; self.path = path; self.into = into
         self.followSymlinks = followSymlinks; self.prune = prune; self.lastSyncedAt = lastSyncedAt
-        self.autoSync = autoSync; self.watching = watching
+        self.autoSync = autoSync; self.watching = watching; self.conflicts = conflicts
     }
     // Tolerant decode so a pre-0.13.0 engine (no autoSync/watching) still works.
     public init(from d: Decoder) throws {
@@ -752,6 +755,7 @@ public struct ExternalSource: Codable, Hashable, Sendable, Identifiable {
         lastSyncedAt = try c.decodeIfPresent(String.self, forKey: .lastSyncedAt)
         autoSync = try c.decodeIfPresent(Bool.self, forKey: .autoSync) ?? false
         watching = try c.decodeIfPresent(Bool.self, forKey: .watching) ?? false
+        conflicts = try c.decodeIfPresent([String].self, forKey: .conflicts) ?? []
     }
     /// Display name = last path component.
     public var name: String { (path as NSString).lastPathComponent }

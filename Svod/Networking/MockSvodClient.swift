@@ -338,6 +338,17 @@ public final class MockSvodClient: SvodClient, @unchecked Sendable {
         for s in Self.mockSources { out.append(try await syncSource(id: s.id, vault: vault)) }
         return out
     }
+    @discardableResult
+    public func resolveSourceConflict(id: String, path: String, strategy: String, vault: String?) async throws -> SourceSyncResult {
+        try await gate()
+        if let i = Self.mockSources.firstIndex(where: { $0.id == id }) {
+            Self.mockSources[i].conflicts.removeAll { $0 == path }
+        }
+        return SourceSyncResult(id: id,
+                                created: [], updated: strategy == "takeExternal" ? [path] : [],
+                                unchanged: strategy == "keepVault" ? [path] : [],
+                                conflicts: [], orphaned: [], deleted: [], skipped: [])
+    }
 
     // embeddings & indexing — in-memory embedder for previews
     private static var mockEmbedder = EmbedderInfo(provider: "local-onnx",
