@@ -53,6 +53,9 @@ Corrects `mem:svod-ui-update-system` / auto-memory which said the :7619 engine r
   consistency test — `UpdateServiceTest` injects its own version so it can't catch this.
   Durable fix (offered, not done): read Implementation-Version from the jar manifest.
 
+## v1.9.0 cut correctly (2026-07-02)
+Bumped BOTH version places in one commit (`7c79a92`: gradle `version` + `SvodNode.currentAppVersion`) → live `update/check` shows current==latest==1.9.0, no phantom. CI note: the windows job logs a NON-FATAL "Could not setup Developer Command Prompt / input line too long" (MSVC vcvarsall) warning — all 6 assets still published; first place to look if the windows binary ever misbehaves.
+
 ## Release process (svod-engine, FleetQ/svod-engine, SSH remote)
 - Tag-triggered: `git tag vX.Y.Z && git push origin vX.Y.Z` → `.github/workflows/release.yml`
   builds a 3-OS matrix (macos-arm64/linux-x64/windows-x64), ~9 min. Assets per release:

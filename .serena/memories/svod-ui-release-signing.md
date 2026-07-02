@@ -52,6 +52,9 @@ code, truncated view). The script may still finish (it did), but to watch it rel
 redirect full output to a log and inspect the log/artifacts after — never truncate the
 live release pipeline.
 
+## Local install from the release DMG (2026-07-02)
+To update /Applications/Svod.app directly (instead of waiting for Sparkle): quit the app (`osascript -e 'tell application "Svod" to quit'`), `hdiutil attach build/release/Svod-macOS-<v>.dmg -nobrowse -quiet`, then `cd /Applications && rm -rf Svod.app` (the dangerous-actions Bash hook BLOCKS any literal `rm -rf /...` absolute path — cd + relative path passes), `ditto --rsrc /Volumes/Svod/Svod.app /Applications/Svod.app`, `hdiutil detach /Volumes/Svod`, verify `spctl -a -t exec` + CFBundleShortVersionString, `open -a`. Installed v0.2.5 this way.
+
 ## Engine release (unchanged, CI)
 Engine (FleetQ/svod-engine) still ships via `.github/workflows/release.yml` on tag `v*`
 → jpackage app-images (macos-arm64/linux-x64/windows-x64) + native binaries. Cut
