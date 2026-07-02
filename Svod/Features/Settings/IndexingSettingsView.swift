@@ -80,6 +80,8 @@ struct IndexingSettingsView: View {
     @State private var current: EmbedderInfo?
     @State private var status: IndexStatus?
     @State private var test: EmbedderTestResult?
+    /// Passive health probe of the APPLIED embedder (not the form draft): nil ⇒ checking.
+    @State private var health: EmbedderTestResult?
     @State private var unavailable = false
     @State private var busy = false
     @State private var statusMsg: String?
@@ -129,6 +131,9 @@ struct IndexingSettingsView: View {
                 Text(status?.keywordReady == false ? "Building keyword index…" : "Keyword search ready")
                     .font(Typography.callout)
             }
+            if let cur = current, cur.provider != "none" {
+                providerHealthRow(cur)
+            }
             if let e = status?.embedding {
                 VStack(alignment: .leading, spacing: Spacing.xxs) {
                     HStack {
@@ -153,6 +158,30 @@ struct IndexingSettingsView: View {
                     if busy { ProgressView().controlSize(.small) }
                 }
                 .disabled(busy)
+            }
+        }
+    }
+
+    /// Live status of the applied embedder: green = reachable (with latency),
+    /// red = down (semantic degraded, keyword unaffected), dotted = probing.
+    @ViewBuilder private func providerHealthRow(_ cur: EmbedderInfo) -> some View {
+        HStack(spacing: Spacing.sm) {
+            if let health {
+                Image(systemName: health.ok ? "bolt.horizontal.circle.fill" : "exclamationmark.triangle.fill")
+                    .foregroundStyle(health.ok ? ThemeColor.sync : ThemeColor.danger)
+                Text(health.ok
+                     ? "Embedding provider live — \(cur.model)"
+                     : "Embedding provider unreachable — semantic search degraded; keyword search still works.")
+                    .font(Typography.callout)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer()
+                if health.ok, let ms = health.latencyMs {
+                    Text("\(ms) ms").font(Typography.caption).foregroundStyle(ThemeColor.textTertiary)
+                }
+            } else {
+                Image(systemName: "circle.dotted").foregroundStyle(ThemeColor.textTertiary)
+                Text("Checking embedding provider…")
+                    .font(Typography.callout).foregroundStyle(ThemeColor.textSecondary)
             }
         }
     }
@@ -376,6 +405,7 @@ struct IndexingSettingsView: View {
             apiKey = ""   // drop the pasted key from memory; the 0600 file holds it now
             statusMsg = "Switched to \(current?.provider ?? provider.rawValue) — re-indexing in the background."
             await refreshStatus()
+            await checkHealth()
             app.refreshActiveVault()
         } catch let e as SvodClientError { statusMsg = e.errorDescription }
         catch { statusMsg = error.localizedDescription }
@@ -425,6 +455,7 @@ struct IndexingSettingsView: View {
             }
             concurrency = (provider == .openai) ? 1 : 2   // engine doesn't echo maxThreads; sane default
             await refreshStatus()
+            await checkHealth()
         } catch let e as SvodClientError where e.isNotImplemented { unavailable = true }
         catch let e as SvodClientError where e.isOffline { _ = e }
         catch { unavailable = true }
@@ -434,13 +465,31 @@ struct IndexingSettingsView: View {
         status = try? await client.indexStatus()
     }
 
+    /// Probe the APPLIED embedder end-to-end (the engine embeds a test string), so the
+    /// row reflects real reachability — Ollama down, model not pulled, pod gone — not
+    /// just a TCP ping. Runs against `current`, never the unapplied form draft.
+    private func checkHealth() async {
+        guard let cur = current, cur.provider != "none" else { health = nil; return }
+        let keyRef: String? = (cur.provider == "remote-openai" && hasStoredKey)
+            ? "file:\(Self.keyFileURL().path)" : nil
+        let req = EmbedderRequest(provider: cur.provider, model: cur.model,
+                                  endpoint: cur.endpoint, apiKeyRef: keyRef)
+        do { health = try await client.testEmbedder(req, vault: vaultID) }
+        catch let e as SvodClientError where e.isOffline { health = nil }   // engine itself is down
+        catch { health = EmbedderTestResult(ok: false, dimension: nil, latencyMs: nil, error: nil) }
+    }
+
     /// Light live refresh while the pane is open (cancelled on disappear by `.task`).
+    /// The provider probe rides the same loop at a gentler cadence (~14s).
     private func pollStatus() async {
+        var tick = 0
         while !Task.isCancelled {
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             if Task.isCancelled { return }
             if unavailable { continue }
             await refreshStatus()
+            tick += 1
+            if tick % 7 == 0 { await checkHealth() }
         }
     }
 }
