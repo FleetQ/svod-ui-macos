@@ -23,6 +23,23 @@ Corrects `mem:svod-ui-update-system` / auto-memory which said the :7619 engine r
   (a `BindException` shows in engine.err.log — HARMLESS, KeepAlive+ThrottleInterval retries)
   then a ~24s cold start (Lucene mmap). Poll for ~40-60s; don't conclude failure early.
 
+## Stop→Start dead-end (UI, FIXED in app v0.2.2 — 2026-07-02)
+- App's Settings→Engine **Stop = `launchctl bootout`** → the agent is fully UNLOADED from
+  gui/501 (`launchctl print` → "Could not find service"). Pre-0.2.2 `EngineModel.start()`
+  only ran `kickstart` (fire-and-forget Process, exit code ignored) → kickstart on an
+  unloaded agent fails silently → Start after Stop ALWAYS timed out ("Timed out waiting
+  for the engine. Check the launchd agent.").
+- Manual recovery: `launchctl bootstrap gui/501 ~/Library/LaunchAgents/dev.svod.engine.plist`
+  then `kickstart gui/501/dev.svod.engine`.
+- Fix (commit `d1fe6d3`, shipped app v0.2.2): start() runs launchctl via a nonisolated
+  async helper with exit-status check; on kickstart failure it bootstraps the plist and
+  retries; /ready poll window 20s→90s (real cold start incl. semantic-index check took
+  ~55s live — the old 24s estimate is a lower bound).
+- Diagnosis tell-tale seen that day: agent at `runs = 81` (crash loop on
+  `BindException: Address already in use` while something else held :7619), then booted
+  out entirely. Check BOTH: `launchctl print gui/501/dev.svod.engine` AND
+  `lsof -nP -iTCP:7619 -iTCP:7620 -sTCP:LISTEN` before restarting.
+
 ## The version-report bug (FIXED → v1.8.1, commit 379d354)
 - `GET /api/v1/update/check`'s `currentVersion` comes from `UpdateService(currentAppVersion=…)`
   constructed in `engine/.../lifecycle/SvodNode.kt` with a **HARDCODED string**. It was left
