@@ -85,9 +85,16 @@ struct AgentsSettingsView: View {
                     .font(.callout).foregroundStyle(.secondary)
             }
             ForEach(agents) { agent in
-                AgentRow(agent: agent)
-                    .contextMenu { rowMenu(agent) }
-                    .swipeActions { Button("Revoke", role: .destructive) { pendingDelete = agent } }
+                HStack(spacing: Spacing.sm) {
+                    AgentRow(agent: agent)
+                    Menu { rowMenu(agent) } label: { Image(systemName: "ellipsis.circle") }
+                        .menuStyle(.borderlessButton)
+                        .menuIndicator(.hidden)
+                        .fixedSize()
+                        .help("Edit, copy token, or revoke")
+                }
+                .contentShape(Rectangle())
+                .contextMenu { rowMenu(agent) }
             }
         }
         Section {
@@ -102,6 +109,9 @@ struct AgentsSettingsView: View {
         Button("Edit…") { editing = .edit(agent) }
         Button("Copy token") { copyToken(agent) }
         Button("Copy connection") { copyConnection(agent) }
+        if let p = agent.prompt, !p.isEmpty {
+            Button("Copy prompt") { copy(p); statusMsg = "Prompt for \(agent.name) copied." }
+        }
         Divider()
         Button("Revoke…", role: .destructive) { pendingDelete = agent }
     }
@@ -293,8 +303,19 @@ struct AgentDraft: Identifiable {
 
     static func new(defaultVault: String?) -> AgentDraft {
         AgentDraft(isNew: true, name: "", agentId: "", role: "WRITE",
-                   selectedVaults: Set([defaultVault].compactMap { $0 }), prompt: "", existingTokenRef: nil)
+                   selectedVaults: Set([defaultVault].compactMap { $0 }), prompt: defaultPrompt, existingTokenRef: nil)
     }
+
+    /// Starter system prompt offered on creation — a paste-ready briefing for the LLM
+    /// client. Purely advisory: the engine stores it but does not enforce it.
+    static let defaultPrompt = """
+    You are connected to my Svod vault over MCP — a versioned markdown note store.
+
+    - Search before you read; read a note before you change it.
+    - Notes are plain markdown; link related notes with [[wikilinks]].
+    - Keep edits minimal and preserve my structure, tone, and language.
+    - Never delete or overwrite notes unless I explicitly ask.
+    """
     static func edit(_ a: Agent) -> AgentDraft {
         AgentDraft(isNew: false, name: a.name, agentId: a.agentId, role: a.role,
                    selectedVaults: Set(a.vaults), prompt: a.prompt ?? "", existingTokenRef: a.tokenRef)
@@ -381,9 +402,21 @@ private struct AgentEditSheet: View {
                 Text("Copy this now and paste it into the LLM client — it's stored in a local 0600 file and the engine only ever sees a file reference.")
                     .font(.caption).foregroundStyle(.secondary)
             } else {
-                Text("A token is already set. Regenerate to issue a new one (the old token stops working).")
-                    .font(.callout).foregroundStyle(.secondary)
+                if let existing = AgentsSettingsView.readToken(draft.existingTokenRef ?? "") {
+                    HStack {
+                        Text(existing).font(.system(.caption, design: .monospaced))
+                            .lineLimit(1).truncationMode(.middle).textSelection(.enabled)
+                        Spacer()
+                        Button { copy(existing) } label: { Image(systemName: "doc.on.doc") }
+                            .buttonStyle(.borderless).help("Copy token")
+                    }
+                } else {
+                    Text("The token is stored outside the app (\(draft.existingTokenRef ?? "no reference")) and can't be shown here.")
+                        .font(.callout).foregroundStyle(.secondary)
+                }
                 Button("Regenerate token") { regenerate = true; generatedToken = AgentsSettingsView.generateToken() }
+                Text("Regenerating issues a new token — the old one stops working.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
         }
     }
