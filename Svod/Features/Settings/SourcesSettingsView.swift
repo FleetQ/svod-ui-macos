@@ -14,12 +14,15 @@ struct SourcesSettingsView: View {
     @State private var addFollowSymlinks = false
     @State private var addPrune = false
     @State private var addAutoSync = false
+    @State private var addWriteBack = false
     @State private var unavailable = false
     @State private var busy = false
     @State private var status: String?
 
     private var client: SvodClient { app.client }
     private var vaultID: String? { app.vault.activeVaultId }
+    /// Two-way write-back needs contract 0.20.0+.
+    private var supportsWriteBack: Bool { app.engine.apiVersionAtLeast(0, 20) }
 
     var body: some View {
         Form {
@@ -42,6 +45,9 @@ struct SourcesSettingsView: View {
                     Toggle("Follow symlinks inside the folder", isOn: $addFollowSymlinks)
                     Toggle("Propagate deletions (prune)", isOn: $addPrune)
                     Toggle("Auto-sync on change (watch the folder)", isOn: $addAutoSync)
+                    if supportsWriteBack {
+                        Toggle("Write my edits back to the files (two-way)", isOn: $addWriteBack)
+                    }
                     Button { pickAndAdd() } label: { Label("Add folder or file…", systemImage: "plus") }
                         .disabled(busy)
                 }
@@ -104,6 +110,15 @@ struct SourcesSettingsView: View {
                 .toggleStyle(.switch).controlSize(.mini)
                 .font(Typography.caption)
                 .disabled(busy)
+            if supportsWriteBack {
+                Toggle("Write my edits back (two-way)", isOn: Binding(
+                    get: { s.writeBack },
+                    set: { on in Task { await setWriteBack(s, on) } }))
+                    .toggleStyle(.switch).controlSize(.mini)
+                    .font(Typography.caption)
+                    .disabled(busy)
+                    .help("A vault edit to a synced file is written back to the original file shortly after you save. A file that changed on both sides still surfaces as a conflict.")
+            }
             if let r = results[s.id] { resultSummary(r) }
             if !s.conflicts.isEmpty { persistedConflicts(s) }
         }
@@ -124,6 +139,7 @@ struct SourcesSettingsView: View {
                 HStack(spacing: Spacing.sm) {
                     part("\(r.created.count) new", ThemeColor.sync, r.created.count)
                     part("\(r.updated.count) updated", ThemeColor.accent, r.updated.count)
+                    part("\(r.pushed.count) pushed back", ThemeColor.sync, r.pushed.count)
                     part("\(r.conflicts.count) conflict", ThemeColor.conflict, r.conflicts.count)
                     part("\(r.orphaned.count) orphaned", ThemeColor.textTertiary, r.orphaned.count)
                     part("\(r.deleted.count) deleted", ThemeColor.textTertiary, r.deleted.count)
@@ -192,7 +208,7 @@ struct SourcesSettingsView: View {
         await run {
             let s = try await client.registerSource(vault: vaultID, path: path, into: nil,
                                                      followSymlinks: addFollowSymlinks, prune: addPrune,
-                                                     autoSync: addAutoSync)
+                                                     autoSync: addAutoSync, writeBack: addWriteBack)
             let r = try await client.syncSource(id: s.id, vault: vaultID)   // register doesn't sync
             results[s.id] = r
             await load()
@@ -241,6 +257,17 @@ struct SourcesSettingsView: View {
                                               followSymlinks: nil, prune: nil)
             await load()
             return on ? "Watching “\(s.name)” for changes" : "Auto-sync off for “\(s.name)”"
+        }
+    }
+
+    private func setWriteBack(_ s: ExternalSource, _ on: Bool) async {
+        guard on != s.writeBack else { return }
+        await run {
+            _ = try await client.updateSource(id: s.id, vault: vaultID, autoSync: nil,
+                                              followSymlinks: nil, prune: nil, writeBack: on)
+            await load()
+            return on ? "Two-way: edits to “\(s.name)” notes flow back to the files."
+                      : "Write-back off for “\(s.name)”."
         }
     }
 

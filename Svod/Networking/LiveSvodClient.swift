@@ -208,16 +208,16 @@ public final class LiveSvodClient: SvodClient, @unchecked Sendable {
     }
 
     @discardableResult
-    public func registerSource(vault: String?, path: String, into: String?, followSymlinks: Bool, prune: Bool, autoSync: Bool) async throws -> ExternalSource {
+    public func registerSource(vault: String?, path: String, into: String?, followSymlinks: Bool, prune: Bool, autoSync: Bool, writeBack: Bool) async throws -> ExternalSource {
         try await send("/api/v1/sources", method: "POST", query: vaulted(),
-                       body: RegisterSourceRequest(path: path, into: into, followSymlinks: followSymlinks, prune: prune, autoSync: autoSync))
+                       body: RegisterSourceRequest(path: path, into: into, followSymlinks: followSymlinks, prune: prune, autoSync: autoSync, writeBack: writeBack))
     }
 
     @discardableResult
-    public func updateSource(id: String, vault: String?, autoSync: Bool?, followSymlinks: Bool?, prune: Bool?) async throws -> ExternalSource {
+    public func updateSource(id: String, vault: String?, autoSync: Bool?, followSymlinks: Bool?, prune: Bool?, writeBack: Bool?) async throws -> ExternalSource {
         let enc = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
         return try await send("/api/v1/sources/\(enc)", method: "PATCH", query: vaulted(),
-                              body: SourceUpdateRequest(autoSync: autoSync, followSymlinks: followSymlinks, prune: prune))
+                              body: SourceUpdateRequest(autoSync: autoSync, followSymlinks: followSymlinks, prune: prune, writeBack: writeBack))
     }
 
     public func removeSource(id: String, vault: String?) async throws {

@@ -735,14 +735,17 @@ public struct ExternalSource: Codable, Hashable, Sendable, Identifiable {
     // whether a watcher is live right now.
     public var autoSync: Bool
     public var watching: Bool
+    /// Two-way write-back of vault edits to the external files (0.20.0).
+    public var writeBack: Bool
     /// Vault paths whose local edits blocked the external update at the last sync (0.19.0).
     public var conflicts: [String]
     public init(id: String, path: String, into: String, followSymlinks: Bool, prune: Bool,
                 lastSyncedAt: String? = nil, autoSync: Bool = false, watching: Bool = false,
-                conflicts: [String] = []) {
+                writeBack: Bool = false, conflicts: [String] = []) {
         self.id = id; self.path = path; self.into = into
         self.followSymlinks = followSymlinks; self.prune = prune; self.lastSyncedAt = lastSyncedAt
-        self.autoSync = autoSync; self.watching = watching; self.conflicts = conflicts
+        self.autoSync = autoSync; self.watching = watching
+        self.writeBack = writeBack; self.conflicts = conflicts
     }
     // Tolerant decode so a pre-0.13.0 engine (no autoSync/watching) still works.
     public init(from d: Decoder) throws {
@@ -755,6 +758,7 @@ public struct ExternalSource: Codable, Hashable, Sendable, Identifiable {
         lastSyncedAt = try c.decodeIfPresent(String.self, forKey: .lastSyncedAt)
         autoSync = try c.decodeIfPresent(Bool.self, forKey: .autoSync) ?? false
         watching = try c.decodeIfPresent(Bool.self, forKey: .watching) ?? false
+        writeBack = try c.decodeIfPresent(Bool.self, forKey: .writeBack) ?? false
         conflicts = try c.decodeIfPresent([String].self, forKey: .conflicts) ?? []
     }
     /// Display name = last path component.
@@ -767,10 +771,11 @@ public struct RegisterSourceRequest: Codable, Hashable, Sendable {
     public var followSymlinks: Bool
     public var prune: Bool                   // propagate deletions (off by default)
     public var autoSync: Bool                // watch the source and sync on change (0.13.0)
+    public var writeBack: Bool               // two-way: vault edits flow back to the files (0.20.0)
     public init(path: String, into: String? = nil, followSymlinks: Bool = false,
-                prune: Bool = false, autoSync: Bool = false) {
+                prune: Bool = false, autoSync: Bool = false, writeBack: Bool = false) {
         self.path = path; self.into = into; self.followSymlinks = followSymlinks
-        self.prune = prune; self.autoSync = autoSync
+        self.prune = prune; self.autoSync = autoSync; self.writeBack = writeBack
     }
 }
 
@@ -780,8 +785,11 @@ public struct SourceUpdateRequest: Codable, Hashable, Sendable {
     public var autoSync: Bool?
     public var followSymlinks: Bool?
     public var prune: Bool?
-    public init(autoSync: Bool? = nil, followSymlinks: Bool? = nil, prune: Bool? = nil) {
+    public var writeBack: Bool?
+    public init(autoSync: Bool? = nil, followSymlinks: Bool? = nil, prune: Bool? = nil,
+                writeBack: Bool? = nil) {
         self.autoSync = autoSync; self.followSymlinks = followSymlinks; self.prune = prune
+        self.writeBack = writeBack
     }
 }
 
@@ -795,14 +803,15 @@ public struct SourceSyncResult: Codable, Hashable, Sendable, Identifiable {
     public var orphaned: [String]           // gone from source → left in vault
     public var deleted: [String]            // gone from source AND pruned (soft-deleted)
     public var skipped: [String]            // secret-scanner blocked
+    public var pushed: [String]             // vault edits written back to the external files (0.20.0)
     public var error: String?               // source path unreadable (sync was a no-op)
 
     public init(id: String, created: [String] = [], updated: [String] = [], unchanged: [String] = [],
                 conflicts: [String] = [], orphaned: [String] = [], deleted: [String] = [],
-                skipped: [String] = [], error: String? = nil) {
+                skipped: [String] = [], pushed: [String] = [], error: String? = nil) {
         self.id = id; self.created = created; self.updated = updated; self.unchanged = unchanged
         self.conflicts = conflicts; self.orphaned = orphaned; self.deleted = deleted
-        self.skipped = skipped; self.error = error
+        self.skipped = skipped; self.pushed = pushed; self.error = error
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -814,6 +823,7 @@ public struct SourceSyncResult: Codable, Hashable, Sendable, Identifiable {
         orphaned = try c.decodeIfPresent([String].self, forKey: .orphaned) ?? []
         deleted = try c.decodeIfPresent([String].self, forKey: .deleted) ?? []
         skipped = try c.decodeIfPresent([String].self, forKey: .skipped) ?? []
+        pushed = try c.decodeIfPresent([String].self, forKey: .pushed) ?? []
         error = try c.decodeIfPresent(String.self, forKey: .error)
     }
     /// New + updated — the "pulled in" count for a concise summary.
