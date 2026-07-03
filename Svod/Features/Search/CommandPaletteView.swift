@@ -40,8 +40,12 @@ struct CommandPaletteView: View {
         .overlay(RoundedRectangle(cornerRadius: Radii.lg, style: .continuous)
             .strokeBorder(ThemeColor.borderSubtle))
         .shadow(color: .black.opacity(0.3), radius: 30, y: 12)
+        .defaultFocus($fieldFocused, true)
         .onAppear {
             fieldFocused = true
+            // The palette arrives via an animated transition, so the field may not be
+            // in the responder chain on the first tick — re-assert focus shortly after.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { fieldFocused = true }
             Task { await model.loadTags() }
         }
         .accessibilityElement(children: .contain)
@@ -65,6 +69,18 @@ struct CommandPaletteView: View {
                 .onKeyPress(.upArrow) { model.moveSelection(by: -1); return .handled }
                 .onKeyPress(.escape) { handleEscape(); return .handled }
                 .accessibilityLabel("Search notes")
+            if let scope = model.inlineScope {
+                HStack(spacing: Spacing.xxs) {
+                    Image(systemName: "folder").imageScale(.small)
+                    Text(scope).font(Typography.caption)
+                }
+                .lineLimit(1)
+                .foregroundStyle(ThemeColor.textSecondary)
+                .padding(.horizontal, Spacing.sm)
+                .padding(.vertical, Spacing.xxs)
+                .background(ThemeColor.surfaceHover, in: Capsule())
+                .accessibilityLabel("Searching in \(scope)")
+            }
             if model.isSearching {
                 ProgressView().controlSize(.small)
             } else if !model.query.isEmpty {
@@ -137,7 +153,7 @@ struct CommandPaletteView: View {
 
     private var idlePrompt: some View {
         let title = model.allVaults ? "Search all vaults" : "Search your vault"
-        let msg = "Find notes by keyword or meaning. Use ↑ ↓ to move, Return to open."
+        let msg = "Find notes by keyword or meaning. Type folder/term to search inside a folder. Use ↑ ↓ to move, Return to open."
         return EmptyStateView(icon: "magnifyingglass", title: title, message: msg)
             .frame(height: 240)
     }

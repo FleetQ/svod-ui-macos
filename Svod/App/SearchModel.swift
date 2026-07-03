@@ -51,10 +51,26 @@ public final class SearchModel: ObservableObject {
                      includeAll: includeAll)
     }
 
+    /// The folder scope parsed out of the query ("projects/account" → "projects"),
+    /// nil when the query has none. Overrides the filter-bar `pathPrefix` while present.
+    public var inlineScope: String? { Self.splitInlineScope(query).scope }
+
+    /// "projects/account" → (scope: "projects", term: "account"); the LAST slash splits,
+    /// so "projects/clientA/invoice" scopes to "projects/clientA". A trailing slash
+    /// ("projects/") browses the folder. No slash, or nothing before it, ⇒ unscoped.
+    private static func splitInlineScope(_ raw: String) -> (scope: String?, term: String) {
+        let q = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let slash = q.lastIndex(of: "/") else { return (nil, q) }
+        let scope = String(q[..<slash]).trimmingCharacters(in: .whitespaces)
+        guard !scope.isEmpty else { return (nil, q) }
+        let term = String(q[q.index(after: slash)...]).trimmingCharacters(in: .whitespaces)
+        return (scope, term)
+    }
+
     public func search(debounce: Duration = .milliseconds(180)) {
         debounceTask?.cancel()
-        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !q.isEmpty || hasActiveFilters else {
+        let (scope, term) = Self.splitInlineScope(query)
+        guard !term.isEmpty || scope != nil || hasActiveFilters else {
             isSearching = false; results = []; hasSearched = false; errorMessage = nil; return
         }
         debounceTask = Task { [weak self] in
@@ -65,8 +81,11 @@ public final class SearchModel: ObservableObject {
     }
 
     public func runSearch() async {
-        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !q.isEmpty || hasActiveFilters else { results = []; hasSearched = false; return }
+        let (scope, term) = Self.splitInlineScope(query)
+        let effectivePrefix = scope ?? pathPrefix
+        guard !term.isEmpty || effectivePrefix != nil || hasActiveFilters else {
+            results = []; hasSearched = false; return
+        }
         isSearching = true; errorMessage = nil
         defer { isSearching = false; hasSearched = true }
         let limit = app?.settings.searchResultLimit ?? 20
@@ -74,19 +93,19 @@ public final class SearchModel: ObservableObject {
             let r: SearchResult
             if allVaults {
                 do {
-                    r = try await client.federatedSearch(query: q, mode: mode, limit: limit,
-                                                         tags: filterTags, pathPrefix: pathPrefix,
+                    r = try await client.federatedSearch(query: term, mode: mode, limit: limit,
+                                                         tags: filterTags, pathPrefix: effectivePrefix,
                                                          memory: memoryFilter)
                 } catch let e as SvodClientError where e.isNotImplemented {
                     // Engine doesn't support across=true yet — fall back to single-vault.
-                    r = try await client.search(query: q, mode: mode, limit: limit,
-                                                tags: filterTags, pathPrefix: pathPrefix,
+                    r = try await client.search(query: term, mode: mode, limit: limit,
+                                                tags: filterTags, pathPrefix: effectivePrefix,
                                                 memory: memoryFilter)
                     self.errorMessage = "All-vaults search is not yet available on this engine. Showing active-vault results."
                 }
             } else {
-                r = try await client.search(query: q, mode: mode, limit: limit,
-                                            tags: filterTags, pathPrefix: pathPrefix,
+                r = try await client.search(query: term, mode: mode, limit: limit,
+                                            tags: filterTags, pathPrefix: effectivePrefix,
                                             memory: memoryFilter)
             }
             // The engine returns per-chunk/per-heading hits, so a note can appear many
@@ -95,8 +114,10 @@ public final class SearchModel: ObservableObject {
             self.results = Self.collapsedByNote(r.hits)
             self.selectedIndex = 0
         } catch let e as SvodClientError {
+            guard !Task.isCancelled else { return }   // superseded by a newer search
             self.errorMessage = e.errorDescription; self.results = []
         } catch {
+            guard !Task.isCancelled else { return }   // superseded by a newer search
             self.errorMessage = error.localizedDescription; self.results = []
         }
     }
