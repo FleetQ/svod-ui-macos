@@ -31,6 +31,7 @@ public final class EngineModel: ObservableObject {
     public var supportsMemory: Bool { apiVersionAtLeast(0, 14) }
 
     private var eventTask: Task<Void, Never>?
+    private var retryTask: Task<Void, Never>?
     private var reconnectAttempts = 0
     /// Guards against two overlapping `connect()` calls (reconnectNow + backoff loop)
     /// both passing the `.connected` check while one is mid-await and opening dual sockets.
@@ -58,16 +59,42 @@ public final class EngineModel: ObservableObject {
         app.connection = .connecting
         do {
             let ready = try await client.ready()
-            guard ready.ready else { app.connection = .disconnected; return }
+            guard ready.ready else {
+                app.connection = .disconnected
+                scheduleRetry()
+                return
+            }
             app.connection = .connected
             reconnectAttempts = 0
             await loadMeta()
             app.reloadVaults()
             startEventStream()
+            retryTask?.cancel(); retryTask = nil
         } catch let e as SvodClientError where e.isOffline {
             app.connection = .disconnected
+            scheduleRetry()
         } catch {
             app.connection = .error((error as? SvodClientError)?.errorDescription ?? error.localizedDescription)
+            scheduleRetry()
+        }
+    }
+
+    /// Retry `connect()` with the gentle backoff (1.6s … 8s) after ANY failed
+    /// attempt — launch during an engine cold start, a dropped stream, or a
+    /// reconnect that itself failed. Without this, one failed `connect()` left
+    /// the app parked in `.disconnected`/`.error` with no live sockets until
+    /// relaunch. An explicit `disconnect()`/`stop()` cancels the chain.
+    private func scheduleRetry() {
+        guard app?.settings.autoReconnect == true else { return }
+        reconnectAttempts += 1
+        let delay = min(8.0, pow(1.6, Double(reconnectAttempts)))
+        retryTask?.cancel()
+        retryTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            guard let self, !Task.isCancelled else { return }
+            // start() owns the flow while its /ready poll runs — don't fight it.
+            if let app = self.app, case .starting = app.connection { return }
+            await self.connect()
         }
     }
 
@@ -103,10 +130,12 @@ public final class EngineModel: ObservableObject {
                 return
             }
         }
-        // Only report the timeout if we're still the one starting.
+        // Only report the timeout if we're still the one starting. Keep retrying
+        // in the background — a very cold start (big vault hash) can take minutes.
         if case .starting = app.connection {
             app.connection = .error("Engine did not become ready in time.")
             startError = "Timed out waiting for the engine. Check the launchd agent."
+            scheduleRetry()
         }
     }
 
@@ -177,14 +206,11 @@ public final class EngineModel: ObservableObject {
     private func handleDisconnect() async {
         guard let app else { return }
         if case .connected = app.connection { app.connection = .disconnected }
-        guard app.settings.autoReconnect else { return }
-        reconnectAttempts += 1
-        let delay = min(8.0, pow(1.6, Double(reconnectAttempts)))   // 1.6s … 8s
-        try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-        if !Task.isCancelled { await connect() }
+        scheduleRetry()
     }
 
     public func disconnect() {
+        retryTask?.cancel(); retryTask = nil
         eventTask?.cancel(); eventTask = nil
         app?.connection = .disconnected
     }
