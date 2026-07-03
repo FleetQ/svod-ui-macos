@@ -62,4 +62,17 @@ public final class SidebarModel: ObservableObject {
     public func toggle(_ path: String) {
         if expanded.contains(path) { expanded.remove(path) } else { expanded.insert(path) }
     }
+
+    /// Set by `reveal(_:)`; the Notes tab scrolls this path into view, then clears it.
+    @Published public var revealTarget: String?
+
+    /// Expand every ancestor folder of `path` and ask the tree to scroll it into view.
+    public func reveal(_ path: String) {
+        var prefix = ""
+        for comp in path.split(separator: "/").dropLast() {
+            prefix = prefix.isEmpty ? String(comp) : prefix + "/" + comp
+            expanded.insert(prefix)
+        }
+        revealTarget = path
+    }
 }

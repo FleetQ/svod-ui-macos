@@ -92,11 +92,20 @@ struct SidebarView: View {
 
     // MARK: Notes tab — just the file tree
     private var notesTab: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: Spacing.lg) {
-                fileTreeSection
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: Spacing.lg) {
+                    fileTreeSection
+                }
+                .padding(Spacing.sm)
             }
-            .padding(Spacing.sm)
+            // Fires after the ancestor folders from reveal(_:) are expanded, so the
+            // target row exists by the time we scroll.
+            .onChange(of: model.revealTarget) { _, target in
+                guard let target else { return }
+                withAnimation(Motion.standard) { proxy.scrollTo(target, anchor: .center) }
+                model.revealTarget = nil
+            }
         }
     }
 
@@ -182,6 +191,19 @@ struct SidebarView: View {
             HStack {
                 SectionLabel("Notes", systemImage: "folder")
                 Spacer(minLength: 0)
+                Button {
+                    if let path = app.selectedPath {
+                        withAnimation(Motion.quick) { model.reveal(path) }
+                    }
+                } label: {
+                    Image(systemName: "scope")
+                        .imageScale(.small)
+                        .foregroundStyle(ThemeColor.textTertiary)
+                }
+                .buttonStyle(.plain)
+                .disabled(app.selectedPath == nil)
+                .help("Reveal the open note in the tree")
+                .accessibilityLabel("Reveal open note in the tree")
                 Button { Task { await model.load() } } label: {
                     Image(systemName: "arrow.clockwise")
                         .imageScale(.small)
@@ -290,6 +312,7 @@ private struct TreeNodeRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.xxs) {
             row
+                .id(node.path)   // scroll anchor for SidebarModel.reveal(_:)
             if isDir && isExpanded {
                 ForEach(node.children ?? []) { child in
                     TreeNodeRow(node: child, depth: depth + 1, model: model, app: app)
