@@ -40,6 +40,20 @@ Corrects `mem:svod-ui-update-system` / auto-memory which said the :7619 engine r
   out entirely. Check BOTH: `launchctl print gui/501/dev.svod.engine` AND
   `lsof -nP -iTCP:7619 -iTCP:7620 -sTCP:LISTEN` before restarting.
 
+## App reconnect dead-state (FIXED 2026-07-03, uncommitted → check git log for EngineModel)
+- Symptom: engine restart via UI "did nothing", app sat with ZERO tcp sockets while the
+  engine was long ready. Root cause: `EngineModel.connect()` had NO retry-on-failure —
+  the 1.6–8s backoff only ran via `handleDisconnect()` (i.e., after a previously
+  SUCCESSFUL connection dropped), and even that chain died after one failed attempt.
+  App launched during an engine cold start (25s–7.5min!) → one failed /ready →
+  parked in `.disconnected` forever until app relaunch.
+- Fix: `scheduleRetry()` (retryTask + backoff) called from every connect() failure path,
+  start()-timeout, and handleDisconnect; cancelled on explicit disconnect()/stop() and
+  on successful connect; skips a tick while `.starting` (start()'s poll owns the flow).
+- Verified live: debug build + argument-domain override (`Svod -svod.settings.endpointPort 7998`,
+  not persisted) against a dead port, fake /ready node server brought up 15s later →
+  app connected on its own within 3s.
+
 ## The version-report bug (FIXED → v1.8.1, commit 379d354)
 - `GET /api/v1/update/check`'s `currentVersion` comes from `UpdateService(currentAppVersion=…)`
   constructed in `engine/.../lifecycle/SvodNode.kt` with a **HARDCODED string**. It was left
