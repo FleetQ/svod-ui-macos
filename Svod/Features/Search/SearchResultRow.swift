@@ -38,6 +38,14 @@ struct SearchResultRow: View {
                             .foregroundStyle(ThemeColor.textTertiary)
                             .lineLimit(1)
                         Spacer(minLength: Spacing.sm)
+                        if let tokens = hit.tokens, tokens > 0 {
+                            Text("≈\(tokens) tok")
+                                .font(Typography.caption2)
+                                .foregroundStyle(ThemeColor.textTertiary)
+                                .monospacedDigit()
+                                .help("Approximate token cost of this result’s excerpt")
+                                .accessibilityHidden(true)
+                        }
                         relevanceDot
                     }
                     SnippetText(snippet: hit.snippet)
@@ -113,6 +121,7 @@ struct SearchResultRow: View {
         else if hit.matchedKeyword { parts.append("keyword match") }
         else if hit.matchedSemantic { parts.append("semantic match") }
         parts.append("relevance \(Int((hit.score * 100).rounded())) percent")
+        if let tokens = hit.tokens, tokens > 0 { parts.append("about \(tokens) tokens") }
         if !hit.tags.isEmpty { parts.append("tags \(hit.tags.joined(separator: ", "))") }
         return parts.joined(separator: ". ")
     }
