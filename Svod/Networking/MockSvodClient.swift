@@ -698,14 +698,14 @@ extension MockSvodClient {
         let tag: String? = tagged ? vault : nil
         if vault == "research" {
             return [
-                .init(path: "research/method.md", heading: "Method", snippet: "Evaluating **hybrid retrieval** quality across a held-out set.", score: 0.88, matchedKeyword: true, matchedSemantic: true, tags: ["research", "method"], vault: tag),
-                .init(path: "research/findings/retrieval-eval.md", heading: "Retrieval eval", snippet: "**RRF** fusion wins on recall@10.", score: 0.66, matchedKeyword: true, matchedSemantic: false, tags: ["research", "findings"], vault: tag),
+                .init(path: "research/method.md", heading: "Method", snippet: "Evaluating **hybrid retrieval** quality across a held-out set.", score: 0.88, matchedKeyword: true, matchedSemantic: true, tags: ["research", "method"], vault: tag, tokens: 124),
+                .init(path: "research/findings/retrieval-eval.md", heading: "Retrieval eval", snippet: "**RRF** fusion wins on recall@10.", score: 0.66, matchedKeyword: true, matchedSemantic: false, tags: ["research", "findings"], vault: tag, tokens: 58),
             ]
         }
         return [
-            .init(path: "vault/architecture.md", heading: "Write path", snippet: "Serialize through the **write-actor**. Atomic tmp → fsync → rename.", score: 0.94, matchedKeyword: true, matchedSemantic: true, tags: ["architecture", "svod"], vault: tag),
-            .init(path: "vault/embeddings.md", heading: "Embeddings", snippet: "BM25 is the guaranteed baseline; **semantics** are opt-in.", score: 0.71, matchedKeyword: false, matchedSemantic: true, tags: ["embeddings", "index"], vault: tag),
-            .init(path: "vault/lucene-index.md", heading: "Lucene index", snippet: "BM25 + HNSW kNN with **RRF** fusion.", score: 0.63, matchedKeyword: true, matchedSemantic: false, tags: ["index"], vault: tag),
+            .init(path: "vault/architecture.md", heading: "Write path", snippet: "Serialize through the **write-actor**. Atomic tmp → fsync → rename.", score: 0.94, matchedKeyword: true, matchedSemantic: true, tags: ["architecture", "svod"], vault: tag, tokens: 182),
+            .init(path: "vault/embeddings.md", heading: "Embeddings", snippet: "BM25 is the guaranteed baseline; **semantics** are opt-in.", score: 0.71, matchedKeyword: false, matchedSemantic: true, tags: ["embeddings", "index"], vault: tag, tokens: 96),
+            .init(path: "vault/lucene-index.md", heading: "Lucene index", snippet: "BM25 + HNSW kNN with **RRF** fusion.", score: 0.63, matchedKeyword: true, matchedSemantic: false, tags: ["index"], vault: tag, tokens: 71),
         ]
     }
 

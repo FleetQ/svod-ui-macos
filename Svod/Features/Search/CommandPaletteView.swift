@@ -158,6 +158,11 @@ struct CommandPaletteView: View {
             .frame(height: 240)
     }
 
+    // Sum of per-hit token estimates the engine supplied (0 when it predates the field).
+    private var totalTokens: Int {
+        model.results.reduce(0) { $0 + ($1.tokens ?? 0) }
+    }
+
     // MARK: footer
     private var footer: some View {
         HStack(spacing: Spacing.md) {
@@ -165,6 +170,14 @@ struct CommandPaletteView: View {
                 Text("\(model.results.count) result\(model.results.count == 1 ? "" : "s")")
                     .font(Typography.caption)
                     .foregroundStyle(ThemeColor.textTertiary)
+                if totalTokens > 0 {
+                    Text("≈\(totalTokens) tokens")
+                        .font(Typography.caption)
+                        .foregroundStyle(ThemeColor.textTertiary)
+                        .monospacedDigit()
+                        .help("Approximate total tokens across these result excerpts")
+                        .accessibilityLabel("about \(totalTokens) tokens total")
+                }
             }
             Spacer()
             KeyHint(symbol: "return", label: "Open")

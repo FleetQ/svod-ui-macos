@@ -165,13 +165,18 @@ public struct SearchHit: Codable, Hashable, Sendable, Identifiable {
     /// Vault id of this hit — only populated on a federated (`across=true`) search.
     /// nil on a single-vault search (the hit is in the active vault).
     public var vault: String?
+    /// Estimated token cost of this hit's content, using the engine's ~4-chars/token
+    /// estimator (the same one `context_pack` uses). nil when the engine predates the
+    /// field — the UI then hides the token affordance rather than inventing a count.
+    public var tokens: Int?
     // id must stay unique across vaults in federated results.
     public var id: String { (vault.map { $0 + ":" } ?? "") + path + "#" + heading }
     public init(path: String, heading: String, snippet: String, score: Double,
-                matchedKeyword: Bool, matchedSemantic: Bool, tags: [String], vault: String? = nil) {
+                matchedKeyword: Bool, matchedSemantic: Bool, tags: [String], vault: String? = nil,
+                tokens: Int? = nil) {
         self.path = path; self.heading = heading; self.snippet = snippet; self.score = score
         self.matchedKeyword = matchedKeyword; self.matchedSemantic = matchedSemantic
-        self.tags = tags; self.vault = vault
+        self.tags = tags; self.vault = vault; self.tokens = tokens
     }
 }
 
