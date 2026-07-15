@@ -193,6 +193,31 @@ public final class LiveSvodClient: SvodClient, @unchecked Sendable {
         try await sendNoResult("/api/v1/agents/\(enc)", method: "DELETE")
     }
 
+    // MARK: memory / recall (not vault-scoped)
+    public func memoryDashboard() async throws -> MemoryDashboard {
+        try await get("/api/v1/memory/dashboard")
+    }
+
+    public func memorySessions(distilled: Bool?, limit: Int?) async throws -> [MemorySession] {
+        var q: [URLQueryItem] = []
+        if let distilled { q.append(.init(name: "distilled", value: distilled ? "true" : "false")) }
+        if let limit { q.append(.init(name: "limit", value: String(limit))) }
+        return try await get("/api/v1/memory/sessions", query: q)
+    }
+
+    public func memoryProposals(status: String?) async throws -> [MemoryProposal] {
+        var q: [URLQueryItem] = []
+        if let status, !status.isEmpty { q.append(.init(name: "status", value: status)) }
+        return try await get("/api/v1/memory/proposals", query: q)
+    }
+
+    @discardableResult
+    public func resolveProposal(id: String, action: String, note: String?) async throws -> MemoryProposal {
+        let enc = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
+        return try await send("/api/v1/memory/proposals/\(enc)", method: "POST",
+                              body: MemoryProposalAction(action: action, note: note), timeout: 30)
+    }
+
     @discardableResult
     public func importVault(source: String, into: String?, vault: String?, followSymlinks: Bool) async throws -> ImportResult {
         // The engine resolves the import target from the `?vault=` query param, not the body —

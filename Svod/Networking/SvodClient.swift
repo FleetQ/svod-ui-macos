@@ -98,6 +98,19 @@ public protocol SvodClient: AnyObject, Sendable {
     /// Revoke an LLM's access. Unknown id ⇒ `.notFound`.
     func deleteAgent(id: String) async throws
 
+    // Memory / recall (engine ≥ contract 0.22.0). Throw `.notImplemented` on 501 so
+    // the UI degrades to a calm "needs a newer engine" note.
+    /// Aggregate stats for the Memory panel (captured/distilled counts, compression).
+    func memoryDashboard() async throws -> MemoryDashboard
+    /// Captured sessions, newest first. `distilled` filters (nil ⇒ all); `limit` caps.
+    func memorySessions(distilled: Bool?, limit: Int?) async throws -> [MemorySession]
+    /// The skill/tool proposals inbox. `status` filters ("open"/"accepted"/"rejected"; nil ⇒ all).
+    func memoryProposals(status: String?) async throws -> [MemoryProposal]
+    /// Accept or reject a proposal (`action` = "accept"|"reject"). Status transition ONLY —
+    /// accept does not auto-create anything (suggestions-over-automation).
+    @discardableResult
+    func resolveProposal(id: String, action: String, note: String?) async throws -> MemoryProposal
+
     // external sources (engine v0.6.0 — re-syncable external files/dirs)
     func listSources(vault: String?) async throws -> [ExternalSource]
     @discardableResult
@@ -225,6 +238,20 @@ public extension SvodClient {
         try await setBackup(vault: vault, remote: remote, enabled: enabled,
                             backupOnStartup: backupOnStartup, backupIntervalMinutes: backupIntervalMinutes,
                             backupOnChange: backupOnChange, syncEnabled: false, syncIntervalMinutes: nil)
+    }
+
+    /// All captured sessions (both distilled and not), newest first.
+    func memorySessions(distilled: Bool? = nil) async throws -> [MemorySession] {
+        try await memorySessions(distilled: distilled, limit: nil)
+    }
+    /// The full proposals inbox (any status).
+    func memoryProposals() async throws -> [MemoryProposal] {
+        try await memoryProposals(status: nil)
+    }
+    /// Resolve a proposal without an operator note.
+    @discardableResult
+    func resolveProposal(id: String, action: String) async throws -> MemoryProposal {
+        try await resolveProposal(id: id, action: action, note: nil)
     }
 }
 

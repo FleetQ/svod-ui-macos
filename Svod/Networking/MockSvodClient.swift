@@ -284,6 +284,64 @@ public final class MockSvodClient: SvodClient, @unchecked Sendable {
         Self.mockAgents.removeAll { $0.agentId == id }
     }
 
+    // MARK: memory / recall
+    private static var mockProposals: [MemoryProposal] = [
+        MemoryProposal(id: "p-1", kind: "skill", title: "Extract a “svod-release” skill",
+                       scope: "project", confidence: 0.82,
+                       rationale: "The signed release + notarize + appcast-push flow recurred across 4 sessions with the same steps.",
+                       sourceSessions: ["s-9", "s-11", "s-14", "s-15"],
+                       createdAt: 1_752_500_000_000, status: "open"),
+        MemoryProposal(id: "p-2", kind: "tool", title: "Foundry tool: appcast edSignature verifier",
+                       scope: "project", confidence: 0.64,
+                       rationale: "Manual edSignature length checks appeared in 3 release sessions — worth a deterministic tool.",
+                       sourceSessions: ["s-11", "s-14", "s-15"],
+                       createdAt: 1_752_400_000_000, status: "open"),
+    ]
+    private static let mockSessions: [MemorySession] = [
+        MemorySession(path: "messy/sessions/1752500000000-svod-ui-macos-a1b2c3d4.md",
+                      project: "svod-ui-macos", sessionId: "a1b2c3d4", startedAt: 1_752_496_400_000,
+                      endedAt: 1_752_500_000_000, bytes: 184_320, distilled: false),
+        MemorySession(path: "messy/sessions/1752410000000-svod-ui-macos-b2c3d4e5.md",
+                      project: "svod-ui-macos", sessionId: "b2c3d4e5", startedAt: 1_752_406_000_000,
+                      endedAt: 1_752_410_000_000, bytes: 96_100, distilled: true),
+        MemorySession(path: "messy/sessions/1752320000000-svod-ui-macos-c3d4e5f6.md",
+                      project: "svod-ui-macos", sessionId: "c3d4e5f6", startedAt: 1_752_317_000_000,
+                      endedAt: 1_752_320_000_000, bytes: 142_880, distilled: true),
+    ]
+
+    public func memoryDashboard() async throws -> MemoryDashboard {
+        try await gate()
+        if behavior == .empty { return MemoryDashboard() }
+        return MemoryDashboard(sessionsCaptured: 12, sessionsDistilled: 9, notesWritten: 14,
+                               capturedBytes: 2_360_000, distilledBytes: 87_400, compressionRatio: 27.0,
+                               lastDistillAt: 1_752_460_000_000,
+                               openProposals: Self.mockProposals.filter { $0.isOpen }.count)
+    }
+
+    public func memorySessions(distilled: Bool?, limit: Int?) async throws -> [MemorySession] {
+        try await gate()
+        if behavior == .empty { return [] }
+        var out = Self.mockSessions
+        if let distilled { out = out.filter { $0.distilled == distilled } }
+        if let limit { out = Array(out.prefix(limit)) }
+        return out
+    }
+
+    public func memoryProposals(status: String?) async throws -> [MemoryProposal] {
+        try await gate()
+        if behavior == .empty { return [] }
+        guard let status, !status.isEmpty else { return Self.mockProposals }
+        return Self.mockProposals.filter { $0.status == status.lowercased() }
+    }
+
+    @discardableResult
+    public func resolveProposal(id: String, action: String, note: String?) async throws -> MemoryProposal {
+        try await gate()
+        guard let i = Self.mockProposals.firstIndex(where: { $0.id == id }) else { throw SvodClientError.notFound }
+        Self.mockProposals[i].status = action.lowercased() == "accept" ? "accepted" : "rejected"
+        return Self.mockProposals[i]
+    }
+
     @discardableResult
     public func importVault(source: String, into: String?, vault: String?, followSymlinks: Bool) async throws -> ImportResult {
         try await gate()

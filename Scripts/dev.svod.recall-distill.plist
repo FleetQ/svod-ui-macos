@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Svod "recall" nightly distiller launchd agent.
+
+  NOT loaded automatically. It schedules an autonomous, paid `claude -p` run every
+  night that writes notes into your Svod vault — a consequential recurring job, so
+  enabling it is a deliberate opt-in. To enable:
+
+    cp Scripts/dev.svod.recall-distill.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.svod.recall-distill.plist
+
+  To disable:
+
+    launchctl bootout gui/$(id -u)/dev.svod.recall-distill
+    rm ~/Library/LaunchAgents/dev.svod.recall-distill.plist
+
+  Requires the engine's /api/v1/memory/* endpoints (contract 0.22.0+) to be live.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>dev.svod.recall-distill</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/katsarov/htdocs/svod-ui-macos/Scripts/recall-distill.sh</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>3</integer>
+    <key>Minute</key><integer>30</integer>
+  </dict>
+  <key>ProcessType</key><string>Background</string>
+  <key>StandardOutPath</key><string>/Users/katsarov/Library/Logs/svod/recall-distill.out.log</string>
+  <key>StandardErrorPath</key><string>/Users/katsarov/Library/Logs/svod/recall-distill.err.log</string>
+</dict>
+</plist>

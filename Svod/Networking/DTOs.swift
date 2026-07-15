@@ -834,3 +834,124 @@ public struct SourceSyncResult: Codable, Hashable, Sendable, Identifiable {
     /// New + updated — the "pulled in" count for a concise summary.
     public var changed: Int { created.count + updated.count }
 }
+
+// MARK: - Memory / recall (engine ≥ contract 0.22.0)
+//
+// The "recall" subsystem: a Stop-hook captures raw sessions into messy/sessions/
+// (kept OUT of search/recall, like <private>); a nightly agent distills them into
+// durable notes and appends skill/tool proposals to an inbox. These DTOs surface
+// the engine's data plane — counts, the captured-session list, and the proposals
+// inbox the operator reviews. Wire enum casing (kind/scope/status) is normalized
+// to lowercase on decode so the UI is robust to the engine's house style.
+
+/// Aggregate stats for the Memory panel. `compressionRatio` = capturedBytes / distilledBytes.
+public struct MemoryDashboard: Codable, Hashable, Sendable {
+    public var sessionsCaptured: Int
+    public var sessionsDistilled: Int
+    public var notesWritten: Int
+    public var capturedBytes: Int
+    public var distilledBytes: Int
+    public var compressionRatio: Double
+    public var lastDistillAt: Int?        // ms epoch; nil ⇒ never distilled
+    public var openProposals: Int
+    public init(sessionsCaptured: Int = 0, sessionsDistilled: Int = 0, notesWritten: Int = 0,
+                capturedBytes: Int = 0, distilledBytes: Int = 0, compressionRatio: Double = 0,
+                lastDistillAt: Int? = nil, openProposals: Int = 0) {
+        self.sessionsCaptured = sessionsCaptured; self.sessionsDistilled = sessionsDistilled
+        self.notesWritten = notesWritten; self.capturedBytes = capturedBytes
+        self.distilledBytes = distilledBytes; self.compressionRatio = compressionRatio
+        self.lastDistillAt = lastDistillAt; self.openProposals = openProposals
+    }
+    enum CodingKeys: String, CodingKey {
+        case sessionsCaptured, sessionsDistilled, notesWritten, capturedBytes,
+             distilledBytes, compressionRatio, lastDistillAt, openProposals
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        sessionsCaptured = (try? c.decode(Int.self, forKey: .sessionsCaptured)) ?? 0
+        sessionsDistilled = (try? c.decode(Int.self, forKey: .sessionsDistilled)) ?? 0
+        notesWritten = (try? c.decode(Int.self, forKey: .notesWritten)) ?? 0
+        capturedBytes = (try? c.decode(Int.self, forKey: .capturedBytes)) ?? 0
+        distilledBytes = (try? c.decode(Int.self, forKey: .distilledBytes)) ?? 0
+        compressionRatio = (try? c.decode(Double.self, forKey: .compressionRatio)) ?? 0
+        lastDistillAt = try? c.decodeIfPresent(Int.self, forKey: .lastDistillAt)
+        openProposals = (try? c.decode(Int.self, forKey: .openProposals)) ?? 0
+    }
+    /// True once at least one session has been captured — used to pick the empty state.
+    public var hasActivity: Bool { sessionsCaptured > 0 }
+}
+
+/// A captured (raw) session note in messy/sessions/. `distilled` flips once the
+/// nightly job has compressed it into durable knowledge.
+public struct MemorySession: Codable, Hashable, Sendable, Identifiable {
+    public var path: String
+    public var project: String?
+    public var sessionId: String
+    public var startedAt: Int              // ms epoch
+    public var endedAt: Int                // ms epoch
+    public var bytes: Int
+    public var distilled: Bool
+    public var id: String { path }
+    public init(path: String, project: String? = nil, sessionId: String,
+                startedAt: Int, endedAt: Int, bytes: Int, distilled: Bool) {
+        self.path = path; self.project = project; self.sessionId = sessionId
+        self.startedAt = startedAt; self.endedAt = endedAt; self.bytes = bytes; self.distilled = distilled
+    }
+    enum CodingKeys: String, CodingKey {
+        case path, project, sessionId, startedAt, endedAt, bytes, distilled
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        path = (try? c.decode(String.self, forKey: .path)) ?? ""
+        project = try? c.decodeIfPresent(String.self, forKey: .project)
+        sessionId = (try? c.decode(String.self, forKey: .sessionId)) ?? ""
+        startedAt = (try? c.decode(Int.self, forKey: .startedAt)) ?? 0
+        endedAt = (try? c.decode(Int.self, forKey: .endedAt)) ?? 0
+        bytes = (try? c.decode(Int.self, forKey: .bytes)) ?? 0
+        distilled = (try? c.decode(Bool.self, forKey: .distilled)) ?? false
+    }
+}
+
+/// A skill/tool proposal the distiller surfaced from a recurring cross-session pattern.
+/// Nothing is created automatically (suggestions-over-automation) — the operator
+/// accepts/rejects here, and `accept` only flags it for follow-up (e.g. the Foundry).
+public struct MemoryProposal: Codable, Hashable, Sendable, Identifiable {
+    public var id: String
+    public var kind: String                // "skill" | "tool" (normalized lowercase)
+    public var title: String
+    public var scope: String               // "project" | "global" (normalized lowercase)
+    public var confidence: Double
+    public var rationale: String
+    public var sourceSessions: [String]
+    public var createdAt: Int              // ms epoch
+    public var status: String              // "open" | "accepted" | "rejected" (normalized lowercase)
+    public init(id: String, kind: String, title: String, scope: String, confidence: Double,
+                rationale: String, sourceSessions: [String], createdAt: Int, status: String) {
+        self.id = id; self.kind = kind.lowercased(); self.title = title
+        self.scope = scope.lowercased(); self.confidence = confidence; self.rationale = rationale
+        self.sourceSessions = sourceSessions; self.createdAt = createdAt; self.status = status.lowercased()
+    }
+    enum CodingKeys: String, CodingKey {
+        case id, kind, title, scope, confidence, rationale, sourceSessions, createdAt, status
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = (try? c.decode(String.self, forKey: .id)) ?? UUID().uuidString
+        kind = ((try? c.decode(String.self, forKey: .kind)) ?? "skill").lowercased()
+        title = (try? c.decode(String.self, forKey: .title)) ?? "Untitled proposal"
+        scope = ((try? c.decode(String.self, forKey: .scope)) ?? "project").lowercased()
+        confidence = (try? c.decode(Double.self, forKey: .confidence)) ?? 0
+        rationale = (try? c.decode(String.self, forKey: .rationale)) ?? ""
+        sourceSessions = (try? c.decode([String].self, forKey: .sourceSessions)) ?? []
+        createdAt = (try? c.decode(Int.self, forKey: .createdAt)) ?? 0
+        status = ((try? c.decode(String.self, forKey: .status)) ?? "open").lowercased()
+    }
+    public var isOpen: Bool { status == "open" }
+}
+
+/// Body of `POST /api/v1/memory/proposals/{id}` — accept or reject a proposal.
+public struct MemoryProposalAction: Codable, Hashable, Sendable {
+    public var action: String              // "accept" | "reject"
+    public var note: String?
+    public init(action: String, note: String? = nil) { self.action = action; self.note = note }
+}
