@@ -68,6 +68,12 @@ public final class EngineModel: ObservableObject {
             reconnectAttempts = 0
             await loadMeta()
             app.reloadVaults()
+            // Panes load on mount, which races ahead of this async connection: a pane
+            // that fetched while the engine was still starting fails and then sits stale
+            // (its `.task` ran once; nothing re-drives it). Bump reloadEpoch so the tree /
+            // graph / conflicts re-fetch, and the selectedPath panes (inspector/history/
+            // editor) re-run — converging every pane to loaded state on every (re)connect.
+            app.refreshActiveVault()
             startEventStream()
             retryTask?.cancel(); retryTask = nil
         } catch let e as SvodClientError where e.isOffline {

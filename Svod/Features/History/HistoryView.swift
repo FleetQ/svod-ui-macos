@@ -33,7 +33,9 @@ struct HistoryView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(ThemeColor.background)
-        .task(id: app.selectedPath) {
+        // Keyed on note + reloadEpoch so a history load that raced the connection re-runs
+        // once the engine is connected (reloadEpoch bumps on every (re)connect).
+        .task(id: "\(app.selectedPath ?? "")|\(app.reloadEpoch)") {
             guard let path = app.selectedPath else { return }
             await model.load(path: path)
             if let first = model.commits.first { await model.select(commit: first) }

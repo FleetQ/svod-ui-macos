@@ -28,7 +28,9 @@ struct InspectorView: View {
             }
         }
         .background(ThemeColor.surface)
-        .task(id: app.selectedPath) { await loadContext() }
+        // Re-run on note change AND on reconnect (reloadEpoch) so a context load that
+        // raced the engine connection ("Couldn't load links") heals once connected.
+        .task(id: "\(app.selectedPath ?? "")|\(app.reloadEpoch)") { await loadContext() }
     }
 
     private func loaded(path: String) -> some View {

@@ -22,6 +22,13 @@ struct EditorView: View {
             guard let path = app.selectedPath else { return }
             await model.load(path: path)
         }
+        // Self-heal an initial editor load that raced the engine connection. Only when
+        // nothing loaded yet AND there's no unsaved draft — a reconnect must never
+        // clobber the user's edits, so a loaded-or-dirty editor is left untouched.
+        .onChange(of: app.reloadEpoch) { _, _ in
+            guard let path = app.selectedPath, model.file == nil, !model.dirty else { return }
+            Task { await model.load(path: path) }
+        }
     }
 
     // MARK: states
