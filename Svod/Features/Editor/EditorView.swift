@@ -76,6 +76,7 @@ struct EditorView: View {
                 previewMode: model.previewMode,
                 focusMode: model.focusMode,
                 noteNames: model.noteNames,
+                path: app.selectedPath,
                 onOpenLink: handleOpenLink
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
