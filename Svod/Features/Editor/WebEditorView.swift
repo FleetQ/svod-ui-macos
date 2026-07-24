@@ -12,7 +12,7 @@ import WebKit
 // (Edit = CodeMirror source, Preview = rendered markdown).
 //
 // Data flow:
-//   Swift → JS   setContent / setMode / setNoteNames / configure (via evaluateJavaScript)
+//   Swift → JS   setContent / setMode / setLanguage / setNoteNames / configure (via evaluateJavaScript)
 //   JS → Swift   change / openLink / openExternal / ready (via messageHandlers.svod)
 // Only the note body is edited here; frontmatter is handled by FrontmatterPanel.
 
@@ -21,6 +21,9 @@ struct WebEditorView: NSViewRepresentable {
     var previewMode: Bool
     var focusMode: Bool
     var noteNames: [String]
+    /// Open file's vault path — the JS side keys both panes off its extension, so a
+    /// synced-in `.py`/`.php` renders as code instead of being flowed as markdown prose.
+    var path: String?
     var onOpenLink: (String) -> Void
     var onOpenExternal: (URL) -> Void = { NSWorkspace.shared.open($0) }
 
@@ -66,6 +69,7 @@ struct WebEditorView: NSViewRepresentable {
         private var jsPreview: Bool?
         private var jsFocus: Bool?
         private var jsNoteNames: [String] = []
+        private var jsPath = ""
         private var configured = false
 
         init(_ parent: WebEditorView) { self.parent = parent }
@@ -107,6 +111,12 @@ struct WebEditorView: NSViewRepresentable {
         func sync() {
             guard ready else { return }
             if !configured { configure(); configured = true }
+            // Before setContent: setMode/renderPreview downstream must already know the
+            // file type, or a code file flashes through the markdown renderer once.
+            if jsPath != (parent.path ?? "") {
+                jsPath = parent.path ?? ""
+                call("window.SvodEditor.setLanguage(\(jsString(jsPath)))")
+            }
             if parent.text != jsDocText {
                 jsDocText = parent.text
                 call("window.SvodEditor.setContent(\(jsString(parent.text)))")
@@ -130,6 +140,8 @@ struct WebEditorView: NSViewRepresentable {
 
         private func pushAll() {
             configure(); configured = true
+            jsPath = parent.path ?? ""
+            call("window.SvodEditor.setLanguage(\(jsString(jsPath)))")
             jsDocText = parent.text
             call("window.SvodEditor.setContent(\(jsString(parent.text)))")
             if let data = try? JSONSerialization.data(withJSONObject: parent.noteNames),
