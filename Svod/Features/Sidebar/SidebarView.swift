@@ -26,6 +26,7 @@ struct SidebarView: View {
     /// Persisted across launches so the user returns to the navigator they last used.
     @AppStorage("svod.sidebar.tab") private var tab: SidebarTab = .notes
     @State private var tagFilter = ""
+    @State private var treeFilter = ""
 
     var body: some View {
         Group {
@@ -90,14 +91,21 @@ struct SidebarView: View {
         .accessibilityLabel("Sidebar section")
     }
 
-    // MARK: Notes tab — just the file tree
+    // MARK: Notes tab — the file tree. Its header (label + reveal/refresh) and the
+    // filter stay pinned above the scroll area, so they're reachable from anywhere
+    // in a long tree instead of scrolling away with the first rows.
     private var notesTab: some View {
         ScrollViewReader { proxy in
-            ScrollView {
-                VStack(alignment: .leading, spacing: Spacing.lg) {
-                    fileTreeSection
+            VStack(spacing: 0) {
+                treeHeader
+                treeFilterField
+                Divider().overlay(ThemeColor.separator)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: Spacing.lg) {
+                        fileTreeSection
+                    }
+                    .padding(Spacing.sm)
                 }
-                .padding(Spacing.sm)
             }
             // Fires after the ancestor folders from reveal(_:) are expanded, so the
             // target row exists by the time we scroll.
@@ -107,6 +115,56 @@ struct SidebarView: View {
                 model.revealTarget = nil
             }
         }
+    }
+
+    private var treeFilterField: some View {
+        HStack(spacing: Spacing.xs) {
+            Image(systemName: "line.3.horizontal.decrease")
+                .imageScale(.small)
+                .foregroundStyle(ThemeColor.textTertiary)
+            TextField("Filter notes and folders", text: $treeFilter)
+                .textFieldStyle(.plain)
+                .font(Typography.callout)
+            if !treeFilter.isEmpty {
+                Button { treeFilter = "" } label: {
+                    Image(systemName: "xmark.circle.fill").imageScale(.small)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(ThemeColor.textTertiary)
+                .accessibilityLabel("Clear filter")
+            }
+        }
+        .padding(.horizontal, Spacing.sm)
+        .padding(.vertical, Spacing.xs)
+        .background(ThemeColor.surfaceRaised, in: RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
+        .padding(.horizontal, Spacing.sm)
+        .padding(.vertical, Spacing.xs)
+    }
+
+    private var trimmedTreeFilter: String {
+        treeFilter.trimmingCharacters(in: .whitespaces)
+    }
+
+    /// Top-level rows to render: the whole tree, or its filtered projection.
+    private var displayedRoots: [TreeNode] {
+        let roots = model.tree?.children ?? []
+        let q = trimmedTreeFilter
+        guard !q.isEmpty else { return roots }
+        return roots.compactMap { pruned($0, query: q) }
+    }
+
+    /// Keep a node when its own name matches, or when any descendant does — a matching
+    /// folder keeps its full subtree so you can browse into it. `localizedStandardContains`
+    /// is case- and diacritic-insensitive, which matters for the Cyrillic vault paths.
+    private func pruned(_ node: TreeNode, query: String) -> TreeNode? {
+        let matches = node.name.localizedStandardContains(query)
+        guard node.type == .dir else { return matches ? node : nil }
+        if matches { return node }
+        let kids = (node.children ?? []).compactMap { pruned($0, query: query) }
+        guard !kids.isEmpty else { return nil }
+        var copy = node
+        copy.children = kids
+        return copy
     }
 
     // MARK: Tags tab — saved searches + the tag taxonomy (the "find by metadata" pane,
@@ -186,40 +244,55 @@ struct SidebarView: View {
     }
 
     // MARK: file tree
+    private var treeHeader: some View {
+        HStack {
+            SectionLabel("Notes", systemImage: "folder")
+            Spacer(minLength: 0)
+            Button {
+                if let path = app.selectedPath {
+                    withAnimation(Motion.quick) { model.reveal(path) }
+                }
+            } label: {
+                Image(systemName: "scope")
+                    .imageScale(.small)
+                    .foregroundStyle(ThemeColor.textTertiary)
+            }
+            .buttonStyle(.plain)
+            .disabled(app.selectedPath == nil)
+            .help("Reveal the open note in the tree")
+            .accessibilityLabel("Reveal open note in the tree")
+            Button { Task { await model.load() } } label: {
+                Image(systemName: "arrow.clockwise")
+                    .imageScale(.small)
+                    .foregroundStyle(ThemeColor.textTertiary)
+            }
+            .buttonStyle(.plain)
+            .disabled(model.isLoading)
+            .help("Refresh file list")
+            .accessibilityLabel("Refresh notes")
+        }
+        .padding(.horizontal, Spacing.lg)
+        .padding(.top, Spacing.sm)
+    }
+
     private var fileTreeSection: some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
-            HStack {
-                SectionLabel("Notes", systemImage: "folder")
-                Spacer(minLength: 0)
-                Button {
-                    if let path = app.selectedPath {
-                        withAnimation(Motion.quick) { model.reveal(path) }
+            if model.tree != nil {
+                let roots = displayedRoots
+                if roots.isEmpty && !trimmedTreeFilter.isEmpty {
+                    Text("No notes or folders match “\(trimmedTreeFilter)”.")
+                        .font(Typography.callout)
+                        .foregroundStyle(ThemeColor.textTertiary)
+                        .padding(.horizontal, Spacing.sm)
+                } else {
+                    // Render the root's children directly; the "vault" root itself is
+                    // implied by the pane, so we don't show it as a row.
+                    // While filtering, folders render expanded so matches deeper in the
+                    // tree are visible without clicking through every ancestor.
+                    ForEach(roots) { node in
+                        TreeNodeRow(node: node, depth: 0, model: model, app: app,
+                                    forceExpanded: !trimmedTreeFilter.isEmpty)
                     }
-                } label: {
-                    Image(systemName: "scope")
-                        .imageScale(.small)
-                        .foregroundStyle(ThemeColor.textTertiary)
-                }
-                .buttonStyle(.plain)
-                .disabled(app.selectedPath == nil)
-                .help("Reveal the open note in the tree")
-                .accessibilityLabel("Reveal open note in the tree")
-                Button { Task { await model.load() } } label: {
-                    Image(systemName: "arrow.clockwise")
-                        .imageScale(.small)
-                        .foregroundStyle(ThemeColor.textTertiary)
-                }
-                .buttonStyle(.plain)
-                .disabled(model.isLoading)
-                .help("Refresh file list")
-                .accessibilityLabel("Refresh notes")
-            }
-            .padding(.horizontal, Spacing.sm)
-            if let root = model.tree {
-                // Render the root's children directly; the "vault" root itself is
-                // implied by the pane, so we don't show it as a row.
-                ForEach(root.children ?? []) { node in
-                    TreeNodeRow(node: node, depth: 0, model: model, app: app)
                 }
             }
         }
@@ -299,13 +372,16 @@ private struct TreeNodeRow: View {
     let depth: Int
     @ObservedObject var model: SidebarModel
     let app: AppModel
+    /// Set while the sidebar filter is active — folders show their (already pruned)
+    /// contents regardless of the persisted expansion set.
+    var forceExpanded: Bool = false
 
     @FocusState private var focused: Bool
     @State private var confirmingDelete = false
     @State private var deleteError: String?
 
     private var isDir: Bool { node.type == .dir }
-    private var isExpanded: Bool { model.expanded.contains(node.path) }
+    private var isExpanded: Bool { forceExpanded || model.expanded.contains(node.path) }
     private var isSelected: Bool { app.selectedPath == node.path }
     private var hovering: Bool { model.hoveredPath == node.path }
 
@@ -315,7 +391,8 @@ private struct TreeNodeRow: View {
                 .id(node.path)   // scroll anchor for SidebarModel.reveal(_:)
             if isDir && isExpanded {
                 ForEach(node.children ?? []) { child in
-                    TreeNodeRow(node: child, depth: depth + 1, model: model, app: app)
+                    TreeNodeRow(node: child, depth: depth + 1, model: model, app: app,
+                                forceExpanded: forceExpanded)
                 }
             }
         }
