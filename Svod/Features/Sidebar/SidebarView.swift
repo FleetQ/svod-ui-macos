@@ -145,23 +145,44 @@ struct SidebarView: View {
         treeFilter.trimmingCharacters(in: .whitespaces)
     }
 
+    /// The filtered projection: the rows to render, plus the folders to open automatically.
+    private struct FilteredTree {
+        var roots: [TreeNode] = []
+        /// Folders rendered open — ONLY those that survived because a descendant matched, so the
+        /// deep hit is visible without clicking through every ancestor.
+        ///
+        /// A folder that matched on its own NAME is deliberately absent. It still keeps its whole
+        /// subtree (so you can browse into a hit) but renders collapsed, because expanding it means
+        /// rendering that entire subtree: on this vault, filtering by "proj" rendered 3,113 of 3,558
+        /// nodes — the whole tree, not a filter result — and the tree is a non-lazy VStack, so every
+        /// keystroke rebuilt all of them. Keeping name-matched folders shut takes that to 17.
+        var autoExpand: Set<String> = []
+    }
+
     /// Top-level rows to render: the whole tree, or its filtered projection.
-    private var displayedRoots: [TreeNode] {
+    private var filteredTree: FilteredTree {
         let roots = model.tree?.children ?? []
         let q = trimmedTreeFilter
-        guard !q.isEmpty else { return roots }
-        return roots.compactMap { pruned($0, query: q) }
+        guard !q.isEmpty else { return FilteredTree(roots: roots) }
+        var result = FilteredTree()
+        result.roots = roots.compactMap { pruned($0, query: q, autoExpand: &result.autoExpand) }
+        return result
     }
 
     /// Keep a node when its own name matches, or when any descendant does — a matching
     /// folder keeps its full subtree so you can browse into it. `localizedStandardContains`
     /// is case- and diacritic-insensitive, which matters for the Cyrillic vault paths.
-    private func pruned(_ node: TreeNode, query: String) -> TreeNode? {
+    ///
+    /// Only folders kept for a DESCENDANT's sake are recorded in [autoExpand]; a name match
+    /// returns early without recording, which is what keeps a common substring from unfolding
+    /// an entire subtree.
+    private func pruned(_ node: TreeNode, query: String, autoExpand: inout Set<String>) -> TreeNode? {
         let matches = node.name.localizedStandardContains(query)
         guard node.type == .dir else { return matches ? node : nil }
         if matches { return node }
-        let kids = (node.children ?? []).compactMap { pruned($0, query: query) }
+        let kids = (node.children ?? []).compactMap { pruned($0, query: query, autoExpand: &autoExpand) }
         guard !kids.isEmpty else { return nil }
+        autoExpand.insert(node.path)
         var copy = node
         copy.children = kids
         return copy
@@ -278,7 +299,8 @@ struct SidebarView: View {
     private var fileTreeSection: some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
             if model.tree != nil {
-                let roots = displayedRoots
+                let filtered = filteredTree
+                let roots = filtered.roots
                 if roots.isEmpty && !trimmedTreeFilter.isEmpty {
                     Text("No notes or folders match “\(trimmedTreeFilter)”.")
                         .font(Typography.callout)
@@ -287,11 +309,11 @@ struct SidebarView: View {
                 } else {
                     // Render the root's children directly; the "vault" root itself is
                     // implied by the pane, so we don't show it as a row.
-                    // While filtering, folders render expanded so matches deeper in the
-                    // tree are visible without clicking through every ancestor.
+                    // While filtering, only the folders leading to a deeper match open
+                    // automatically — see FilteredTree.autoExpand.
                     ForEach(roots) { node in
                         TreeNodeRow(node: node, depth: 0, model: model, app: app,
-                                    forceExpanded: !trimmedTreeFilter.isEmpty)
+                                    autoExpand: filtered.autoExpand)
                     }
                 }
             }
@@ -372,16 +394,17 @@ private struct TreeNodeRow: View {
     let depth: Int
     @ObservedObject var model: SidebarModel
     let app: AppModel
-    /// Set while the sidebar filter is active — folders show their (already pruned)
-    /// contents regardless of the persisted expansion set.
-    var forceExpanded: Bool = false
+    /// Folders the sidebar filter wants open — those holding a deeper match. Empty when no
+    /// filter is active. A folder that matched on its own name is NOT in here: it renders
+    /// collapsed so a common substring can't unfold its whole subtree.
+    var autoExpand: Set<String> = []
 
     @FocusState private var focused: Bool
     @State private var confirmingDelete = false
     @State private var deleteError: String?
 
     private var isDir: Bool { node.type == .dir }
-    private var isExpanded: Bool { forceExpanded || model.expanded.contains(node.path) }
+    private var isExpanded: Bool { autoExpand.contains(node.path) || model.expanded.contains(node.path) }
     private var isSelected: Bool { app.selectedPath == node.path }
     private var hovering: Bool { model.hoveredPath == node.path }
 
@@ -392,7 +415,7 @@ private struct TreeNodeRow: View {
             if isDir && isExpanded {
                 ForEach(node.children ?? []) { child in
                     TreeNodeRow(node: child, depth: depth + 1, model: model, app: app,
-                                forceExpanded: forceExpanded)
+                                autoExpand: autoExpand)
                 }
             }
         }
