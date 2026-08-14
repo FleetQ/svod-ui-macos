@@ -84,7 +84,7 @@ struct CommandPaletteView: View {
             if model.isSearching {
                 ProgressView().controlSize(.small)
             } else if !model.query.isEmpty {
-                Button { model.query = ""; model.search(); fieldFocused = true } label: {
+                Button { model.query = ""; model.searchNow(); fieldFocused = true } label: {
                     Image(systemName: "xmark.circle.fill")
                 }
                 .buttonStyle(.plain)

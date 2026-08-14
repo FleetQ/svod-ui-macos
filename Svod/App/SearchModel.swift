@@ -67,6 +67,16 @@ public final class SearchModel: ObservableObject {
         return (scope, term)
     }
 
+    /// Re-run immediately, for DISCRETE interactions — a tag chip, a picker, a Clear button.
+    /// A single click is not a burst to collapse, so the debounce buys nothing there and just
+    /// delays the result by its full wait. Typing still goes through [search] so a keystroke
+    /// burst stays one request: each distinct prefix would otherwise cost the engine a fresh
+    /// query embedding (~112 ms) that no user will ever ask for again.
+    ///
+    /// Still routed through [search] rather than calling [runSearch] directly, so a newer
+    /// interaction keeps superseding an in-flight one via `debounceTask`.
+    public func searchNow() { search(debounce: .zero) }
+
     public func search(debounce: Duration = .milliseconds(180)) {
         debounceTask?.cancel()
         let (scope, term) = Self.splitInlineScope(query)
@@ -152,11 +162,11 @@ public final class SearchModel: ObservableObject {
         selectedIndex = min(max(next, 0), results.count - 1)
     }
 
-    /// Toggle a tag filter and re-run (debounced) so chips feel live.
+    /// Toggle a tag filter and re-run immediately so chips feel live.
     public func toggleTag(_ tag: String) {
         if let i = filterTags.firstIndex(of: tag) { filterTags.remove(at: i) }
         else { filterTags.append(tag) }
-        search()
+        searchNow()
     }
 
     public var selectedHit: SearchHit? {

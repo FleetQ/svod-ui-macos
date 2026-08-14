@@ -42,13 +42,13 @@ struct SearchFiltersBar: View {
     private var memoryFilters: some View {
         HStack(spacing: Spacing.sm) {
             memoryMenu(label: "Type", value: model.filterType, options: memoryTypes) {
-                model.filterType = $0; model.search()
+                model.filterType = $0; model.searchNow()
             }
             memoryMenu(label: "Status", value: model.filterStatus, options: memoryStatuses) {
-                model.filterStatus = $0; model.search()
+                model.filterStatus = $0; model.searchNow()
             }
             Button {
-                model.includeAll.toggle(); model.search()
+                model.includeAll.toggle(); model.searchNow()
             } label: {
                 MemoryToggleChip(label: "Show hidden", systemImage: "eye.trianglebadge.exclamationmark",
                                  active: model.includeAll)
@@ -84,7 +84,7 @@ struct SearchFiltersBar: View {
     private var allVaultsToggle: some View {
         Button {
             model.allVaults.toggle()
-            model.search()
+            model.searchNow()
         } label: {
             AllVaultsChip(active: model.allVaults)
         }
@@ -98,7 +98,7 @@ struct SearchFiltersBar: View {
     private var modePicker: some View {
         Picker("Search mode", selection: Binding(
             get: { model.mode },
-            set: { model.mode = $0; model.search() }
+            set: { model.mode = $0; model.searchNow() }
         )) {
             ForEach(SearchMode.allCases, id: \.self) { mode in
                 Text(mode.label).tag(mode)
@@ -125,7 +125,7 @@ struct SearchFiltersBar: View {
             .foregroundStyle(ThemeColor.textPrimary)
             if model.pathPrefix != nil {
                 Button {
-                    model.pathPrefix = nil; model.search()
+                    model.pathPrefix = nil; model.searchNow()
                 } label: {
                     Image(systemName: "xmark.circle.fill").imageScale(.small)
                 }
