@@ -20,6 +20,33 @@ struct GraphView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
+        HStack(spacing: 0) {
+            // Hidden entirely when the engine predates contract 0.24.0 — the app must keep working
+            // against an older engine without showing a capability it does not have.
+            if supportsCommunities {
+                GraphCommunitiesPane(model: model)
+                Divider().overlay(ThemeColor.separator)
+            }
+            canvas
+        }
+        .task { if model.graph == nil { await model.load() } }
+        .task(id: supportsCommunities) {
+            // Runs once settings land and again if the engine is swapped for a different version.
+            guard supportsCommunities else { return }
+            await model.loadCommunities()
+        }
+        .task(id: app.reloadEpoch) {
+            // Vault switched: animate the old graph out, then load the new vault's graph.
+            guard app.reloadEpoch > 0 else { return }
+            withAnimation(Motion.standard) { model.clearGraph() }
+            await model.load()
+            if supportsCommunities { await model.loadCommunities() }
+        }
+    }
+
+    private var supportsCommunities: Bool { app.engine.supportsGraphCommunities }
+
+    private var canvas: some View {
         ZStack {
             ThemeColor.background.ignoresSafeArea()
 
@@ -46,13 +73,6 @@ struct GraphView: View {
             }
             .padding(Spacing.md)
         }
-        .task { if model.graph == nil { await model.load() } }
-        .task(id: app.reloadEpoch) {
-            // Vault switched: animate the old graph out, then load the new vault's graph.
-            guard app.reloadEpoch > 0 else { return }
-            withAnimation(Motion.standard) { model.clearGraph() }
-            await model.load()
-        }
     }
 
     // MARK: scope toggle
@@ -65,7 +85,14 @@ struct GraphView: View {
             .pickerStyle(.segmented)
             .labelsHidden()
             .frame(width: 180)
-            .help("Show the whole vault, or just the open note's neighborhood.")
+            // A selected theme already IS a scope, and it overrides this picker in
+            // `scopedGraph()`. Leaving the control live would make it look broken.
+            .disabled(model.selectedCommunityID != nil)
+            .help(
+                model.selectedCommunityID != nil
+                    ? "Изчисти избраната тема, за да ползваш този превключвател."
+                    : "Show the whole vault, or just the open note's neighborhood."
+            )
             Spacer()
             if app.vault.hasMultipleVaults, let name = app.vault.activeVault?.name {
                 Text(name)

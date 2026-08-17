@@ -47,6 +47,12 @@ public protocol SvodClient: AnyObject, Sendable {
     func fileLinks(path: String) async throws -> FileLinks
     func graph() async throws -> Graph
 
+    // derived thematic graph (contract 0.24.0). An engine older than that 404s these — callers must
+    // feature-detect via `graphStatus()` and hide the surface rather than surfacing an error.
+    func graphCommunities(query: String?, level: Int?, limit: Int?) async throws -> GraphCommunities
+    func graphStatus() async throws -> GraphStatus
+    func graphRebuild() async throws -> GraphStatus
+
     // search
     func search(query: String, mode: SearchMode, limit: Int?, tags: [String], pathPrefix: String?, memory: MemoryFilter) async throws -> SearchResult
     /// Federated search across ALL vaults (`across=true`). Each hit carries its `vault`.

@@ -30,6 +30,13 @@ public final class EngineModel: ObservableObject {
     /// The 0.14.0 memory primitives (typed/lifecycle search + filters).
     public var supportsMemory: Bool { apiVersionAtLeast(0, 14) }
 
+    /// The 0.24.0 derived thematic graph (`/graph/communities`, `/graph/status`).
+    ///
+    /// Must be gated on the version, never on a 404: the engine serves the web viewer as an SPA
+    /// fallback, so an unknown path returns **200 text/html**, which surfaces as a decoding error
+    /// rather than `notFound`. Verified against the live 0.23.0 engine.
+    public var supportsGraphCommunities: Bool { apiVersionAtLeast(0, 24) }
+
     private var eventTask: Task<Void, Never>?
     private var retryTask: Task<Void, Never>?
     private var reconnectAttempts = 0
