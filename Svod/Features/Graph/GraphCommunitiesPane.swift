@@ -23,6 +23,7 @@ struct GraphCommunitiesPane: View {
         VStack(alignment: .leading, spacing: 0) {
             header
             Divider().overlay(ThemeColor.separator)
+            staleBanner
 
             if model.communitiesLoading && model.communities.isEmpty {
                 LoadingStateView("Разчитане на темите…")
@@ -41,7 +42,11 @@ struct GraphCommunitiesPane: View {
             Text("ТЕМИ")
                 .font(Typography.caption)
                 .foregroundStyle(ThemeColor.textTertiary)
-            if model.communitiesStale {
+            // The badge is the FALLBACK now: it stays for engines that cannot count what changed
+            // (older than contract 0.26.0, or incremental attachment off). When the engine can count,
+            // the banner below says how much and offers to fix it — a badge alone tells the operator
+            // something is wrong and nothing about what to do.
+            if model.communitiesStale && model.newSinceBuild == nil {
                 Text("остаряло")
                     .font(Typography.caption)
                     .padding(.horizontal, Spacing.xs)
@@ -76,6 +81,54 @@ struct GraphCommunitiesPane: View {
         }
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, Spacing.sm)
+    }
+
+    /// Says how many notes arrived since the last full build, and offers the rebuild that folds them in.
+    ///
+    /// Shown only when the engine actually counted (contract 0.26.0 with incremental attachment on).
+    /// A reported **0** is a real answer — nothing is missing — so the banner disappears rather than
+    /// showing a reassuring zero.
+    @ViewBuilder
+    private var staleBanner: some View {
+        if let new = model.newSinceBuild, new > 0 {
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
+                HStack(alignment: .firstTextBaseline, spacing: Spacing.xs) {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .font(Typography.caption)
+                        .foregroundStyle(ThemeColor.textTertiary)
+                    Text(new == 1 ? "1 нова бележка след строежа" : "\(new) нови бележки след строежа")
+                        .font(Typography.caption)
+                        .foregroundStyle(ThemeColor.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                // The two halves are materially different: attached notes ARE findable through the
+                // themes, the pending ones are on no theme at all. Only the second is a reason to
+                // rebuild now.
+                if model.pendingNotes > 0 {
+                    Text(
+                        model.pendingNotes == 1
+                            ? "1 от тях още не е в никоя тема"
+                            : "\(model.pendingNotes) от тях още не са в никоя тема"
+                    )
+                    .font(Typography.caption2)
+                    .foregroundStyle(ThemeColor.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+                Button("Построй наново") {
+                    Task { await model.rebuildCommunities() }
+                }
+                .buttonStyle(.link)
+                .font(Typography.caption)
+                .disabled(model.communitiesLoading)
+                .help("Пълният строеж прегрупира темите и написва обобщенията наново — отнема минути.")
+            }
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.sm)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(ThemeColor.conflictSubtle)
+            .accessibilityElement(children: .combine)
+            Divider().overlay(ThemeColor.separator)
+        }
     }
 
     private var emptyState: some View {
@@ -145,6 +198,16 @@ struct GraphCommunitiesPane: View {
                     .foregroundStyle(ThemeColor.textPrimary)
                     .lineLimit(2)
                 Spacer(minLength: Spacing.xs)
+                // Notes attached after the summary was written. Shown because the summary below is
+                // deliberately NOT regenerated for them — without this the count and the description
+                // would quietly disagree.
+                if let grown = community.addedSinceSummary, grown > 0 {
+                    Text("+\(grown)")
+                        .font(Typography.caption2)
+                        .foregroundStyle(ThemeColor.textTertiary)
+                        .monospacedDigit()
+                        .help("\(grown) нови бележки след обобщението — то не ги описва.")
+                }
                 Text("\(community.size)")
                     .font(Typography.caption)
                     .foregroundStyle(ThemeColor.textTertiary)

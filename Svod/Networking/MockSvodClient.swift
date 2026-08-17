@@ -138,7 +138,8 @@ public final class MockSvodClient: SvodClient, @unchecked Sendable {
             state: "READY", stale: false,
             communities: sample ? Self.communities.map { c in
                 GraphCommunity(id: c.id, level: c.level, title: c.title, summary: c.summary,
-                               size: c.size, members: Array(c.members.prefix(5)))
+                               size: c.size, members: Array(c.members.prefix(5)),
+                               addedSinceSummary: c.addedSinceSummary)
             } : Self.communities
         )
     }
@@ -153,10 +154,13 @@ public final class MockSvodClient: SvodClient, @unchecked Sendable {
         try await gate()
         if behavior == .empty { return GraphStatus(state: "NOT_BUILT", enabled: false) }
         return GraphStatus(
-            state: "READY", enabled: true, stale: false, head: "abc1234", currentHead: "abc1234",
+            state: "READY", enabled: true, stale: true, head: "abc1234", currentHead: "def5678",
             builtAt: 1_760_000_000_000, noteCount: 42, edgeCount: 96, linkEdgeCount: 18, simEdgeCount: 78,
             communityCount: Self.communities.count, levelCount: 2, vectorCoverage: 1.0,
-            summaryProvider: "ollama", summarisedCount: Self.communities.count
+            summaryProvider: "ollama", summarisedCount: Self.communities.count,
+            // Stale WITH counts: the state the pane's rebuild banner exists for. A mock that is never
+            // stale renders only the happy path, which is how the badge went so long unexamined.
+            incremental: true, attachedCount: 2, pendingCount: 1
         )
     }
 
@@ -581,7 +585,9 @@ extension MockSvodClient {
             summary: "Бележки за слоевете на engine-а, договора и индексирането. Обединяват се около "
                 + "решенията как App API и MCP се версионират заедно.",
             size: 3,
-            members: ["vault/architecture.md", "vault/notes/engine.md", "vault/notes/contract.md"]
+            members: ["vault/architecture.md", "vault/notes/engine.md", "vault/notes/contract.md"],
+            // Grown by incremental attachment since it was summarised — the "+2" the row renders.
+            addedSinceSummary: 2
         ),
         GraphCommunity(
             id: "L1-1", level: 1, title: "vault/journal",

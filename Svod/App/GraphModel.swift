@@ -31,6 +31,15 @@ public final class GraphModel: ObservableObject {
     @Published public var communitiesLoading = false
     @Published public var selectedCommunityID: String?
 
+    /// Notes written since the last full build (contract 0.26.0), or nil when the engine cannot say.
+    ///
+    /// nil and 0 mean different things and the pane renders them differently: nil is "not reported"
+    /// (older engine, or incremental attachment switched off) and falls back to the bare stale badge,
+    /// while 0 is a positive statement that nothing is missing from the map.
+    @Published public var newSinceBuild: Int?
+    /// Of those, the ones on no theme at all — the part a rebuild would actually fix.
+    @Published public var pendingNotes = 0
+
     public init(client: SvodClient) { self.client = client }
 
     public func load() async {
@@ -53,6 +62,8 @@ public final class GraphModel: ObservableObject {
         selectedCommunityID = nil
         communitiesState = "NOT_BUILT"
         communitiesStale = false
+        newSinceBuild = nil
+        pendingNotes = 0
     }
 
     /// Load the thematic communities. Only called when the engine advertises 0.24.0 or newer.
@@ -63,6 +74,8 @@ public final class GraphModel: ObservableObject {
             let status = try await client.graphStatus()
             communitiesState = status.state
             communitiesStale = status.stale
+            newSinceBuild = status.newSinceBuild
+            pendingNotes = status.pendingCount ?? 0
             guard status.state != "NOT_BUILT" else { communities = []; return }
             // `sample`, not `full`: the complete membership of 50 themes was ~44k tokens / 177 KB of
             // paths the list never shows. The one theme in focus fetches its own via graphCommunity.
@@ -75,6 +88,8 @@ public final class GraphModel: ObservableObject {
             // (engine restarting, vault switching). Drop the data and leave the pane to retry.
             communities = []
             communitiesState = "NOT_BUILT"
+            newSinceBuild = nil
+            pendingNotes = 0
         }
     }
 
