@@ -214,9 +214,16 @@ public struct GraphCommunity: Codable, Hashable, Sendable, Identifiable {
     public var summary: String?
     public var size: Int
     public var members: [String]
-    public init(id: String, level: Int, title: String, summary: String? = nil, size: Int, members: [String]) {
+    /// Contract 0.26.0. Members attached after the summary was written, so `summary` describes
+    /// slightly fewer notes than `size` counts. Optional: an older engine simply omits it.
+    public var addedSinceSummary: Int?
+    public init(
+        id: String, level: Int, title: String, summary: String? = nil, size: Int,
+        members: [String], addedSinceSummary: Int? = nil
+    ) {
         self.id = id; self.level = level; self.title = title
         self.summary = summary; self.size = size; self.members = members
+        self.addedSinceSummary = addedSinceSummary
     }
 }
 
@@ -247,6 +254,16 @@ public struct GraphStatus: Codable, Hashable, Sendable {
     public var vectorCoverage: Double
     public var summaryProvider: String
     public var summarisedCount: Int
+    /// Contract 0.26.0. Whether the engine attaches new notes to existing themes between builds.
+    ///
+    /// Optional on purpose, and it must be read BEFORE the two counts below: an engine older than
+    /// 0.26.0 omits all three, and with the feature switched off the counts are never computed — in
+    /// both cases a bare `0` would read as "nothing has changed", which is a different claim.
+    public var incremental: Bool?
+    /// Notes placed on an existing theme since the last full build. Reachable through the themes.
+    public var attachedCount: Int?
+    /// Notes on no theme at all — not yet attached, or with no close-enough neighbour.
+    public var pendingCount: Int?
     public var error: String?
     public var progress: String?
 
@@ -254,7 +271,9 @@ public struct GraphStatus: Codable, Hashable, Sendable {
         state: String, enabled: Bool, stale: Bool = false, head: String? = nil, currentHead: String? = nil,
         builtAt: Int64? = nil, noteCount: Int = 0, edgeCount: Int = 0, linkEdgeCount: Int = 0,
         simEdgeCount: Int = 0, communityCount: Int = 0, levelCount: Int = 0, vectorCoverage: Double = 0,
-        summaryProvider: String = "none", summarisedCount: Int = 0, error: String? = nil, progress: String? = nil
+        summaryProvider: String = "none", summarisedCount: Int = 0,
+        incremental: Bool? = nil, attachedCount: Int? = nil, pendingCount: Int? = nil,
+        error: String? = nil, progress: String? = nil
     ) {
         self.state = state; self.enabled = enabled; self.stale = stale
         self.head = head; self.currentHead = currentHead; self.builtAt = builtAt
@@ -262,11 +281,23 @@ public struct GraphStatus: Codable, Hashable, Sendable {
         self.linkEdgeCount = linkEdgeCount; self.simEdgeCount = simEdgeCount
         self.communityCount = communityCount; self.levelCount = levelCount
         self.vectorCoverage = vectorCoverage; self.summaryProvider = summaryProvider
-        self.summarisedCount = summarisedCount; self.error = error; self.progress = progress
+        self.summarisedCount = summarisedCount
+        self.incremental = incremental; self.attachedCount = attachedCount; self.pendingCount = pendingCount
+        self.error = error; self.progress = progress
     }
 
     public var isBuilding: Bool { state == "BUILDING" }
     public var isReady: Bool { state == "READY" }
+
+    /// How many notes arrived since the last full build, or nil when this engine cannot say.
+    ///
+    /// nil is not zero: it means the question was not answered (engine older than 0.26.0, or
+    /// incremental attachment off), and the UI must fall back to the plain "stale" badge rather than
+    /// claim nothing is missing.
+    public var newSinceBuild: Int? {
+        guard incremental == true else { return nil }
+        return (attachedCount ?? 0) + (pendingCount ?? 0)
+    }
 }
 
 public struct FileLinks: Codable, Hashable, Sendable {
