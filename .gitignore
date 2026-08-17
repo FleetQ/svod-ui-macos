@@ -9,3 +9,6 @@ xcuserdata/
 tooling/webeditor/node_modules/
 tooling/webeditor/package-lock.json
 *.runpod-api.key
+
+# recall distiller scratch (created + removed per run)
+.recall-work.*
