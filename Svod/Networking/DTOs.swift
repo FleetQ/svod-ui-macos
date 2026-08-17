@@ -200,6 +200,75 @@ public struct Graph: Codable, Hashable, Sendable {
     }
 }
 
+// MARK: graph communities (contract 0.24.0, additive)
+
+/// One thematic community of the engine's derived graph.
+///
+/// `summary` is nil when the engine built the graph without a summary provider — the community is
+/// still fully usable and `title` carries a machine-derived label, so the UI must never treat a nil
+/// summary as an error state.
+public struct GraphCommunity: Codable, Hashable, Sendable, Identifiable {
+    public var id: String
+    public var level: Int
+    public var title: String
+    public var summary: String?
+    public var size: Int
+    public var members: [String]
+    public init(id: String, level: Int, title: String, summary: String? = nil, size: Int, members: [String]) {
+        self.id = id; self.level = level; self.title = title
+        self.summary = summary; self.size = size; self.members = members
+    }
+}
+
+public struct GraphCommunities: Codable, Hashable, Sendable {
+    public var state: String
+    public var stale: Bool
+    public var communities: [GraphCommunity]
+    public init(state: String, stale: Bool, communities: [GraphCommunity]) {
+        self.state = state; self.stale = stale; self.communities = communities
+    }
+}
+
+/// Build state of the derived graph. `stale` means the vault moved past the build's HEAD; the engine
+/// still serves results, so this is a badge to show, not a reason to hide the pane.
+public struct GraphStatus: Codable, Hashable, Sendable {
+    public var state: String
+    public var enabled: Bool
+    public var stale: Bool
+    public var head: String?
+    public var currentHead: String?
+    public var builtAt: Int64?
+    public var noteCount: Int
+    public var edgeCount: Int
+    public var linkEdgeCount: Int
+    public var simEdgeCount: Int
+    public var communityCount: Int
+    public var levelCount: Int
+    public var vectorCoverage: Double
+    public var summaryProvider: String
+    public var summarisedCount: Int
+    public var error: String?
+    public var progress: String?
+
+    public init(
+        state: String, enabled: Bool, stale: Bool = false, head: String? = nil, currentHead: String? = nil,
+        builtAt: Int64? = nil, noteCount: Int = 0, edgeCount: Int = 0, linkEdgeCount: Int = 0,
+        simEdgeCount: Int = 0, communityCount: Int = 0, levelCount: Int = 0, vectorCoverage: Double = 0,
+        summaryProvider: String = "none", summarisedCount: Int = 0, error: String? = nil, progress: String? = nil
+    ) {
+        self.state = state; self.enabled = enabled; self.stale = stale
+        self.head = head; self.currentHead = currentHead; self.builtAt = builtAt
+        self.noteCount = noteCount; self.edgeCount = edgeCount
+        self.linkEdgeCount = linkEdgeCount; self.simEdgeCount = simEdgeCount
+        self.communityCount = communityCount; self.levelCount = levelCount
+        self.vectorCoverage = vectorCoverage; self.summaryProvider = summaryProvider
+        self.summarisedCount = summarisedCount; self.error = error; self.progress = progress
+    }
+
+    public var isBuilding: Bool { state == "BUILDING" }
+    public var isReady: Bool { state == "READY" }
+}
+
 public struct FileLinks: Codable, Hashable, Sendable {
     public struct OutLink: Codable, Hashable, Sendable, Identifiable {
         public var target: String

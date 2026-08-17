@@ -122,6 +122,22 @@ public final class LiveSvodClient: SvodClient, @unchecked Sendable {
     }
     public func graph() async throws -> Graph { try await get("/api/v1/graph", query: vaulted()) }
 
+    public func graphCommunities(query: String?, level: Int?, limit: Int?) async throws -> GraphCommunities {
+        var items: [URLQueryItem] = []
+        if let query, !query.isEmpty { items.append(.init(name: "query", value: query)) }
+        if let level { items.append(.init(name: "level", value: String(level))) }
+        if let limit { items.append(.init(name: "limit", value: String(limit))) }
+        return try await get("/api/v1/graph/communities", query: vaulted(items))
+    }
+
+    public func graphStatus() async throws -> GraphStatus {
+        try await get("/api/v1/graph/status", query: vaulted())
+    }
+
+    public func graphRebuild() async throws -> GraphStatus {
+        try await sendNoBody("/api/v1/graph/rebuild", method: "POST", query: vaulted())
+    }
+
     // MARK: search
     public func search(query: String, mode: SearchMode, limit: Int?, tags: [String], pathPrefix: String?, memory: MemoryFilter) async throws -> SearchResult {
         try await get("/api/v1/search", query: vaulted(searchItems(query, mode, limit, tags, pathPrefix, memory)))

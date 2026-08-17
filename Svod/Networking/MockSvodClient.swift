@@ -129,6 +129,28 @@ public final class MockSvodClient: SvodClient, @unchecked Sendable {
         return Self.graph(for: currentVault)
     }
 
+    public func graphCommunities(query: String?, level: Int?, limit: Int?) async throws -> GraphCommunities {
+        try await gate()
+        if behavior == .empty { return GraphCommunities(state: "NOT_BUILT", stale: false, communities: []) }
+        return GraphCommunities(state: "READY", stale: false, communities: Self.communities)
+    }
+
+    public func graphStatus() async throws -> GraphStatus {
+        try await gate()
+        if behavior == .empty { return GraphStatus(state: "NOT_BUILT", enabled: false) }
+        return GraphStatus(
+            state: "READY", enabled: true, stale: false, head: "abc1234", currentHead: "abc1234",
+            builtAt: 1_760_000_000_000, noteCount: 42, edgeCount: 96, linkEdgeCount: 18, simEdgeCount: 78,
+            communityCount: Self.communities.count, levelCount: 2, vectorCoverage: 1.0,
+            summaryProvider: "ollama", summarisedCount: Self.communities.count
+        )
+    }
+
+    public func graphRebuild() async throws -> GraphStatus {
+        try await gate()
+        return GraphStatus(state: "BUILDING", enabled: true, progress: "similarity edges")
+    }
+
     // MARK: search
     public func search(query: String, mode: SearchMode, limit: Int?, tags: [String], pathPrefix: String?, memory: MemoryFilter) async throws -> SearchResult {
         try await gate()
@@ -536,6 +558,23 @@ extension MockSvodClient {
     static func tree(for vault: String) -> TreeNode { vault == "research" ? researchTree : notesTree }
     static func files(for vault: String) -> [String: FileContent] { vault == "research" ? researchFiles : notesFiles }
     static func graph(for vault: String) -> Graph { vault == "research" ? researchGraph : notesGraph }
+
+    /// Fixtures for the Теми pane: one summarised community and one that only has a machine label,
+    /// so previews exercise both rendering paths.
+    static let communities: [GraphCommunity] = [
+        GraphCommunity(
+            id: "L1-0", level: 1, title: "Архитектура на двигателя",
+            summary: "Бележки за слоевете на engine-а, договора и индексирането. Обединяват се около "
+                + "решенията как App API и MCP се версионират заедно.",
+            size: 3,
+            members: ["vault/architecture.md", "vault/notes/engine.md", "vault/notes/contract.md"]
+        ),
+        GraphCommunity(
+            id: "L1-1", level: 1, title: "vault/journal",
+            summary: nil, size: 2,
+            members: ["vault/journal/2026-08-01.md", "vault/journal/2026-08-02.md"]
+        ),
+    ]
 
     static let notesTree = TreeNode(name: "vault", path: "vault", type: .dir, children: [
         TreeNode(name: "architecture.md", path: "vault/architecture.md", type: .file),

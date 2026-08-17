@@ -17,6 +17,20 @@ public final class GraphModel: ObservableObject {
     @Published public var errorMessage: String?
     @Published public var hoveredNodeID: String?
 
+    // ---- derived thematic graph (contract 0.24.0) ----
+    //
+    // Support is decided by `EngineModel.supportsGraphCommunities` (apiVersion >= 0.24.0), NOT by
+    // catching a 404 here: the engine serves the web viewer as an SPA fallback, so an unknown path
+    // returns 200 text/html and the client raises a DECODING error, not `notFound`. An earlier
+    // version of this file gated on `.notFound` and would have left the pane visible-but-empty
+    // against every older engine — caught by probing the live 0.23.0 engine.
+
+    @Published public var communities: [GraphCommunity] = []
+    @Published public var communitiesState: String = "NOT_BUILT"
+    @Published public var communitiesStale = false
+    @Published public var communitiesLoading = false
+    @Published public var selectedCommunityID: String?
+
     public init(client: SvodClient) { self.client = client }
 
     public func load() async {
@@ -35,6 +49,54 @@ public final class GraphModel: ObservableObject {
     public func clearGraph() {
         graph = nil
         errorMessage = nil
+        communities = []
+        selectedCommunityID = nil
+        communitiesState = "NOT_BUILT"
+        communitiesStale = false
+    }
+
+    /// Load the thematic communities. Only called when the engine advertises 0.24.0 or newer.
+    public func loadCommunities() async {
+        communitiesLoading = true
+        defer { communitiesLoading = false }
+        do {
+            let status = try await client.graphStatus()
+            communitiesState = status.state
+            communitiesStale = status.stale
+            guard status.state != "NOT_BUILT" else { communities = []; return }
+            let result = try await client.graphCommunities(query: nil, level: nil, limit: 50)
+            communities = result.communities
+            communitiesState = result.state
+            communitiesStale = result.stale
+        } catch {
+            // The pane is only shown on a supporting engine, so a failure here is transient
+            // (engine restarting, vault switching). Drop the data and leave the pane to retry.
+            communities = []
+            communitiesState = "NOT_BUILT"
+        }
+    }
+
+    /// Ask the engine to rebuild, then poll until it settles so the pane reflects the new state.
+    public func rebuildCommunities() async {
+        communitiesLoading = true
+        defer { communitiesLoading = false }
+        do {
+            _ = try await client.graphRebuild()
+            for _ in 0..<120 {
+                try await Task.sleep(nanoseconds: 1_000_000_000)
+                let status = try await client.graphStatus()
+                communitiesState = status.state
+                if !status.isBuilding { break }
+            }
+        } catch {
+            // Rebuild is a convenience; a failure leaves whatever was already loaded in place.
+        }
+        await loadCommunities()
+    }
+
+    public var selectedCommunity: GraphCommunity? {
+        guard let id = selectedCommunityID else { return nil }
+        return communities.first { $0.id == id }
     }
 
     /// Path the local view re-centers on (the open note). Read from AppModel.
@@ -46,6 +108,18 @@ public final class GraphModel: ObservableObject {
     /// kept only when their source survives the filter.
     public func scopedGraph() -> Graph? {
         guard let graph else { return nil }
+
+        // A selected theme wins over the global/local toggle: picking a community IS a scope choice,
+        // and showing the whole graph behind it would defeat the point of selecting one.
+        if let community = selectedCommunity {
+            let keep = Set(community.members)
+            return Graph(
+                nodes: graph.nodes.filter { keep.contains($0.id) },
+                edges: graph.edges.filter { keep.contains($0.source) && keep.contains($0.target) },
+                unresolved: graph.unresolved.filter { keep.contains($0.source) }
+            )
+        }
+
         guard scope == .local, let focus = focusPath, graph.nodes.contains(where: { $0.id == focus })
         else { return graph }
 
