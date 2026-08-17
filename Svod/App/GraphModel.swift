@@ -64,7 +64,9 @@ public final class GraphModel: ObservableObject {
             communitiesState = status.state
             communitiesStale = status.stale
             guard status.state != "NOT_BUILT" else { communities = []; return }
-            let result = try await client.graphCommunities(query: nil, level: nil, limit: 50)
+            // `sample`, not `full`: the complete membership of 50 themes was ~44k tokens / 177 KB of
+            // paths the list never shows. The one theme in focus fetches its own via graphCommunity.
+            let result = try await client.graphCommunities(query: nil, level: nil, limit: 50, members: "sample")
             communities = result.communities
             communitiesState = result.state
             communitiesStale = result.stale
@@ -99,6 +101,26 @@ public final class GraphModel: ObservableObject {
         return communities.first { $0.id == id }
     }
 
+    /// Select a theme and narrow the notes tree to its members — the point of selecting one.
+    ///
+    /// The listing only carries a preview of the membership, so the full set is fetched here, for
+    /// this one theme. Passing nil clears both the selection and the tree filter.
+    public func selectCommunity(_ id: String?) async {
+        selectedCommunityID = id
+        guard let id, let app else {
+            app?.themeFilter = nil
+            return
+        }
+        do {
+            let full = try await client.graphCommunity(id: id)
+            app.themeFilter = AppModel.ThemeFilter(id: full.id, title: full.title, paths: Set(full.members))
+        } catch {
+            // An older engine or a rebuild mid-flight: keep the selection visible in the pane but do
+            // not filter the tree to a set we could not load — an empty tree would look like data loss.
+            app.themeFilter = nil
+        }
+    }
+
     /// Path the local view re-centers on (the open note). Read from AppModel.
     public var focusPath: String? { app?.selectedPath }
 
@@ -106,20 +128,15 @@ public final class GraphModel: ObservableObject {
     /// local returns a 1-hop neighborhood around `focusPath`, derived by filtering
     /// the already-loaded global graph (no extra round-trip). Unresolved edges are
     /// kept only when their source survives the filter.
+    /// Selecting a theme deliberately does NOT scope this canvas.
+    ///
+    /// It used to, and the result was an almost-empty view: this graph is the WIKILINK graph, while
+    /// themes are formed mostly from embedding similarity. Measured on the real vault, the 300-note
+    /// "Documentation and Policies" theme had **zero** wikilink edges among its members, and several
+    /// others had one or two — so scoping to a theme reliably produced a field of unconnected dots.
+    /// Filtering the notes tree is where a theme selection now leads instead.
     public func scopedGraph() -> Graph? {
         guard let graph else { return nil }
-
-        // A selected theme wins over the global/local toggle: picking a community IS a scope choice,
-        // and showing the whole graph behind it would defeat the point of selecting one.
-        if let community = selectedCommunity {
-            let keep = Set(community.members)
-            return Graph(
-                nodes: graph.nodes.filter { keep.contains($0.id) },
-                edges: graph.edges.filter { keep.contains($0.source) && keep.contains($0.target) },
-                unresolved: graph.unresolved.filter { keep.contains($0.source) }
-            )
-        }
-
         guard scope == .local, let focus = focusPath, graph.nodes.contains(where: { $0.id == focus })
         else { return graph }
 

@@ -49,7 +49,11 @@ public protocol SvodClient: AnyObject, Sendable {
 
     // derived thematic graph (contract 0.24.0). An engine older than that 404s these — callers must
     // feature-detect via `graphStatus()` and hide the surface rather than surfacing an error.
-    func graphCommunities(query: String?, level: Int?, limit: Int?) async throws -> GraphCommunities
+    /// `members` is `full` | `sample` | `none` (contract 0.25.0). Prefer `sample` for listings: the
+    /// full membership dominates the payload and is only needed for the one theme in focus.
+    func graphCommunities(query: String?, level: Int?, limit: Int?, members: String?) async throws -> GraphCommunities
+    /// Complete membership of one theme, by the id from `graphCommunities`.
+    func graphCommunity(id: String) async throws -> GraphCommunity
     func graphStatus() async throws -> GraphStatus
     func graphRebuild() async throws -> GraphStatus
 

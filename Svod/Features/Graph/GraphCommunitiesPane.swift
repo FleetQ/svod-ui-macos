@@ -1,10 +1,14 @@
 import SwiftUI
 
-/// The "Теми" pane beside the graph canvas: the vault's thematic communities, as computed by the
-/// engine's derived graph (contract 0.24.0).
+/// The "Теми" pane: the vault's thematic communities, as computed by the engine's derived graph.
 ///
-/// Selecting a theme scopes the canvas to its members (see `GraphModel.scopedGraph`), and a member
-/// row opens that note — so this is a navigation surface, not a report.
+/// **Selecting a theme filters the notes tree to its members** — that is the whole point of the
+/// selection, and it replaced two earlier dead ends: a wall of hundreds of head-truncated paths in
+/// this pane, and scoping the graph canvas, which showed almost nothing because the canvas draws
+/// WIKILINKS while themes are formed mostly from embedding similarity (the 300-note "Documentation
+/// and Policies" theme had zero wikilink edges among its members).
+///
+/// So: the pane is the map, the notes tree is where you walk. The canvas is now independent of it.
 ///
 /// Rendering rules worth keeping:
 ///  - a community with `summary == nil` is normal, not an error (the engine may have built the graph
@@ -50,6 +54,7 @@ struct GraphCommunitiesPane: View {
             if model.selectedCommunityID != nil {
                 Button {
                     withAnimation(Motion.standard) { model.selectedCommunityID = nil }
+                    Task { await model.selectCommunity(nil) }
                 } label: {
                     Image(systemName: "xmark.circle")
                 }
@@ -100,6 +105,35 @@ struct GraphCommunitiesPane: View {
         }
     }
 
+    /// Filename first, folder as secondary — a head-truncated full path reads as noise.
+    private func memberRow(_ path: String) -> some View {
+        let name = path.split(separator: "/").last.map(String.init) ?? path
+        let folder = path.contains("/") ? String(path[path.startIndex..<path.lastIndex(of: "/")!]) : ""
+        return Button {
+            app.selectedPath = path
+        } label: {
+            VStack(alignment: .leading, spacing: 0) {
+                Text(name.hasSuffix(".md") ? String(name.dropLast(3)) : name)
+                    .font(Typography.caption)
+                    .foregroundStyle(app.selectedPath == path ? ThemeColor.accent : ThemeColor.textSecondary)
+                    .lineLimit(1)
+                if !folder.isEmpty {
+                    Text(folder)
+                        .font(Typography.caption2)
+                        .foregroundStyle(ThemeColor.textTertiary)
+                        .lineLimit(1)
+                        .truncationMode(.head)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .buttonStyle(.plain)
+        .help(path)
+    }
+
+    /// How many member paths the pane previews before deferring to the notes tree.
+    private let MEMBER_PREVIEW = 8
+
     @ViewBuilder
     private func communityRow(_ community: GraphCommunity) -> some View {
         let isSelected = model.selectedCommunityID == community.id
@@ -127,21 +161,17 @@ struct GraphCommunitiesPane: View {
 
             if isSelected {
                 VStack(alignment: .leading, spacing: Spacing.xxs) {
-                    ForEach(community.members, id: \.self) { path in
-                        Button {
-                            app.selectedPath = path
-                        } label: {
-                            Text(path)
-                                .font(Typography.caption)
-                                .foregroundStyle(
-                                    app.selectedPath == path ? ThemeColor.accent : ThemeColor.textTertiary
-                                )
-                                .lineLimit(1)
-                                .truncationMode(.head)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .buttonStyle(.plain)
-                        .help(path)
+                    // A preview, not the membership: selecting a theme filters the notes tree, which
+                    // is where you actually browse it. Listing hundreds of head-truncated paths here
+                    // was unreadable and led nowhere.
+                    ForEach(community.members.prefix(MEMBER_PREVIEW), id: \.self) { path in
+                        memberRow(path)
+                    }
+                    if community.size > community.members.count || community.size > MEMBER_PREVIEW {
+                        Text("и още \(community.size - min(community.members.count, MEMBER_PREVIEW)) — вижте ги в списъка с бележки вляво")
+                            .font(Typography.caption2)
+                            .foregroundStyle(ThemeColor.textTertiary)
+                            .padding(.top, Spacing.xxs)
                     }
                 }
                 .padding(.top, Spacing.xxs)
@@ -155,9 +185,9 @@ struct GraphCommunitiesPane: View {
         )
         .contentShape(Rectangle())
         .onTapGesture {
-            withAnimation(Motion.standard) {
-                model.selectedCommunityID = isSelected ? nil : community.id
-            }
+            let next = isSelected ? nil : community.id
+            withAnimation(Motion.standard) { model.selectedCommunityID = next }
+            Task { await model.selectCommunity(next) }
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(community.title), \(community.size) бележки")
