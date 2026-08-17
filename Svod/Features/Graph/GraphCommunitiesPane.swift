@@ -22,12 +22,13 @@ struct GraphCommunitiesPane: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
+            levelPicker
             Divider().overlay(ThemeColor.separator)
             staleBanner
 
             if model.communitiesLoading && model.communities.isEmpty {
                 LoadingStateView("Разчитане на темите…")
-            } else if model.communities.isEmpty {
+            } else if model.visibleCommunities.isEmpty {
                 emptyState
             } else {
                 list
@@ -83,6 +84,44 @@ struct GraphCommunitiesPane: View {
         .padding(.vertical, Spacing.sm)
     }
 
+    /// Picks which level of the hierarchy the pane lists.
+    ///
+    /// Only shown when the graph actually has more than one level. The coarsest level is the least
+    /// precise: measured on the real vault its median theme holds 44 notes and the largest holds 320,
+    /// while one level down the median is 7 — small enough to mean something. The API supported
+    /// `level` from the start; the pane simply never offered it.
+    @ViewBuilder
+    private var levelPicker: some View {
+        if model.levelCount > 1 {
+            HStack(spacing: Spacing.xs) {
+                Text("ПОДРОБНОСТ")
+                    .font(Typography.caption2)
+                    .foregroundStyle(ThemeColor.textTertiary)
+                Picker("Ниво", selection: levelBinding) {
+                    Text("Едро").tag(model.levelCount - 1)
+                    ForEach(Array(0..<(model.levelCount - 1)).reversed(), id: \.self) { l in
+                        Text(l == 0 ? "Ситно" : "Ниво \(l)").tag(l)
+                    }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .controlSize(.small)
+                .disabled(model.communitiesLoading)
+            }
+            .padding(.horizontal, Spacing.md)
+            .padding(.bottom, Spacing.sm)
+        }
+    }
+
+    /// nil means "the engine's default", which is the coarsest level — surfaced as that index so the
+    /// menu always shows what is actually on screen rather than an empty selection.
+    private var levelBinding: Binding<Int> {
+        Binding(
+            get: { model.level ?? max(model.levelCount - 1, 0) },
+            set: { next in Task { await model.showLevel(next) } }
+        )
+    }
+
     /// Says how many notes arrived since the last full build, and offers the rebuild that folds them in.
     ///
     /// Shown only when the engine actually counted (contract 0.26.0 with incremental attachment on).
@@ -113,6 +152,16 @@ struct GraphCommunitiesPane: View {
                     .font(Typography.caption2)
                     .foregroundStyle(ThemeColor.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
+                }
+                // Drift is the OTHER half of "is a rebuild worth it": attached notes are on the map,
+                // but a high share of them would now be filed elsewhere. Shown only above a
+                // threshold, because a couple of percent is noise the operator cannot act on.
+                if let drift = model.driftRatio, drift >= 0.2 {
+                    Text("≈\(Int((drift * 100).rounded()))% от закачените вече не пасват на темата си")
+                        .font(Typography.caption2)
+                        .foregroundStyle(ThemeColor.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .help("Оценка по извадка. Пълният строеж прегрупира всичко наново.")
                 }
                 Button("Построй наново") {
                     Task { await model.rebuildCommunities() }
@@ -150,7 +199,7 @@ struct GraphCommunitiesPane: View {
     private var list: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: Spacing.xs) {
-                ForEach(model.communities) { community in
+                ForEach(model.visibleCommunities) { community in
                     communityRow(community)
                 }
             }

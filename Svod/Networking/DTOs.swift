@@ -264,6 +264,9 @@ public struct GraphStatus: Codable, Hashable, Sendable {
     public var attachedCount: Int?
     /// Notes on no theme at all — not yet attached, or with no close-enough neighbour.
     public var pendingCount: Int?
+    /// Contract 0.27.0. Fraction of attached notes whose placement vote no longer matches where they
+    /// sit. A proxy: 0.0 means no sampled attachment has drifted, not that the partition is optimal.
+    public var driftRatio: Double?
     public var error: String?
     public var progress: String?
 
@@ -273,7 +276,7 @@ public struct GraphStatus: Codable, Hashable, Sendable {
         simEdgeCount: Int = 0, communityCount: Int = 0, levelCount: Int = 0, vectorCoverage: Double = 0,
         summaryProvider: String = "none", summarisedCount: Int = 0,
         incremental: Bool? = nil, attachedCount: Int? = nil, pendingCount: Int? = nil,
-        error: String? = nil, progress: String? = nil
+        driftRatio: Double? = nil, error: String? = nil, progress: String? = nil
     ) {
         self.state = state; self.enabled = enabled; self.stale = stale
         self.head = head; self.currentHead = currentHead; self.builtAt = builtAt
@@ -283,6 +286,7 @@ public struct GraphStatus: Codable, Hashable, Sendable {
         self.vectorCoverage = vectorCoverage; self.summaryProvider = summaryProvider
         self.summarisedCount = summarisedCount
         self.incremental = incremental; self.attachedCount = attachedCount; self.pendingCount = pendingCount
+        self.driftRatio = driftRatio
         self.error = error; self.progress = progress
     }
 

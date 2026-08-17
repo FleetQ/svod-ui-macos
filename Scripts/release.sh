@@ -125,18 +125,51 @@ echo "    appcast: $APPCAST (item for $VERSION prepended)"
 
 # 7. Publish — ONLY with PUBLISH=1. Otherwise print the commands and stop.
 if [ "${PUBLISH:-0}" = "1" ]; then
-  echo "==> PUBLISH=1 — creating GitHub release + pushing appcast"
-  gh release create "$TAG" "$DMG" --title "Svod for macOS $VERSION" \
-      --notes "Svod for macOS $VERSION." 2>/dev/null \
-    || gh release upload "$TAG" "$DMG" --clobber
+  echo "==> PUBLISH=1 — pushing the release commit, then creating the GitHub release"
+  # ORDER MATTERS. `gh release create` tags whatever the remote HEAD is, so creating the
+  # release BEFORE pushing the appcast commit tags the commit *before* the release — the
+  # tag drift this project has hit repeatedly. Commit and push first; the tag then lands on
+  # the release commit.
   git add appcast.xml Svod.xcodeproj/project.pbxproj
-  git commit -m "release(macos): v$VERSION (build $BUILD)"
+  # "Nothing staged" is legitimate on a re-run of a version already committed; ANY OTHER commit
+  # failure is not, and must stop the release. `git commit || true` would swallow a hook rejection
+  # and push+tag anyway — re-creating the very tag drift this ordering exists to prevent.
+  if git diff --cached --quiet; then
+    echo "    (nothing new to commit — assuming a re-run)"
+  elif ! git commit -m "release(macos): v$VERSION (build $BUILD)"; then
+    echo "ERROR: the release commit failed; not pushing and not tagging." >&2
+    exit 1
+  fi
   git push
+  # Retry: GitHub 5xx during a publish once left the appcast uncommitted and the release
+  # missing, because `set -e` killed the script on the failed create. The commit is now
+  # already safe above, and a transient failure here is retried rather than fatal.
+  published=0
+  for attempt in 1 2 3 4 5; do
+    if gh release create "$TAG" "$DMG" --title "Svod for macOS $VERSION" \
+         --notes "Svod for macOS $VERSION." 2>/dev/null; then
+      published=1; break
+    fi
+    # The tag may already exist (a retry, or a re-run) — then just upload the asset.
+    if gh release upload "$TAG" "$DMG" --clobber 2>/dev/null; then
+      published=1; break
+    fi
+    if [ "$attempt" -lt 5 ]; then
+      echo "    publish attempt $attempt failed; retrying in 20s"
+      sleep 20
+    fi
+  done
+  if [ "$published" != "1" ]; then
+    echo "ERROR: could not publish $TAG after 5 attempts. The appcast commit IS pushed;" >&2
+    echo "       re-run: gh release create $TAG \"$DMG\" --title \"Svod for macOS $VERSION\"" >&2
+    exit 1
+  fi
   echo "==> published $TAG and pushed appcast."
 else
   echo ""
-  echo "==> build complete. To PUBLISH: re-run with PUBLISH=1, or manually:"
-  echo "    gh release create $TAG \"$DMG\" --title \"Svod for macOS $VERSION\""
+  echo "==> build complete. To PUBLISH: re-run with PUBLISH=1, or manually (IN THIS ORDER —"
+  echo "    the release tags the remote HEAD, so the commit must be pushed first):"
   echo "    git add appcast.xml Svod.xcodeproj/project.pbxproj"
   echo "    git commit -m \"release(macos): v$VERSION (build $BUILD)\" && git push"
+  echo "    gh release create $TAG \"$DMG\" --title \"Svod for macOS $VERSION\""
 fi
