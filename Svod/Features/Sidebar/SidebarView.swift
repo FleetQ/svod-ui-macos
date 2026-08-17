@@ -98,6 +98,7 @@ struct SidebarView: View {
         ScrollViewReader { proxy in
             VStack(spacing: 0) {
                 treeHeader
+                if app.themeFilter != nil { themeFilterBanner }
                 treeFilterField
                 Divider().overlay(ThemeColor.separator)
                 ScrollView {
@@ -114,6 +115,39 @@ struct SidebarView: View {
                 withAnimation(Motion.standard) { proxy.scrollTo(target, anchor: .center) }
                 model.revealTarget = nil
             }
+        }
+    }
+
+    /// Why the tree is showing a subset. Without this the filtered tree looks like a bug or an
+    /// unexpectedly small vault, and there is no obvious way back.
+    @ViewBuilder
+    private var themeFilterBanner: some View {
+        if let theme = app.themeFilter {
+            HStack(spacing: Spacing.xs) {
+                Image(systemName: "square.stack.3d.up")
+                    .imageScale(.small)
+                    .foregroundStyle(ThemeColor.accent)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(theme.title)
+                        .font(Typography.caption)
+                        .foregroundStyle(ThemeColor.textPrimary)
+                        .lineLimit(1)
+                    Text("\(theme.paths.count) бележки")
+                        .font(Typography.caption2)
+                        .foregroundStyle(ThemeColor.textTertiary)
+                }
+                Spacer(minLength: Spacing.xs)
+                Button {
+                    withAnimation(Motion.standard) { app.themeFilter = nil }
+                } label: {
+                    Image(systemName: "xmark.circle.fill").imageScale(.small)
+                }
+                .buttonStyle(.plain)
+                .help("Покажи всички бележки отново")
+            }
+            .padding(.horizontal, Spacing.lg)
+            .padding(.vertical, Spacing.xs)
+            .background(ThemeColor.accentSubtle)
         }
     }
 
@@ -160,13 +194,39 @@ struct SidebarView: View {
     }
 
     /// Top-level rows to render: the whole tree, or its filtered projection.
+    ///
+    /// A selected theme narrows the tree to that theme's notes; the text filter then applies on top,
+    /// so you can search *within* a theme. Order matters — the theme is the coarse cut.
     private var filteredTree: FilteredTree {
-        let roots = model.tree?.children ?? []
-        let q = trimmedTreeFilter
-        guard !q.isEmpty else { return FilteredTree(roots: roots) }
+        var roots = model.tree?.children ?? []
         var result = FilteredTree()
+
+        if let theme = app.themeFilter {
+            roots = roots.compactMap { keepingPaths($0, paths: theme.paths, autoExpand: &result.autoExpand) }
+        }
+        let q = trimmedTreeFilter
+        guard !q.isEmpty else {
+            result.roots = roots
+            return result
+        }
         result.roots = roots.compactMap { pruned($0, query: q, autoExpand: &result.autoExpand) }
         return result
+    }
+
+    /// Keep only files in [paths], and the folders on the way to them.
+    ///
+    /// Unlike the name filter, EVERY surviving folder is auto-expanded: a theme's notes are scattered
+    /// across the tree, so leaving the folders shut would show a handful of closed directories and
+    /// hide the very thing the user selected. The counts stay small because the set is bounded by the
+    /// theme's membership, not by a substring that might match half the vault.
+    private func keepingPaths(_ node: TreeNode, paths: Set<String>, autoExpand: inout Set<String>) -> TreeNode? {
+        guard node.type == .dir else { return paths.contains(node.path) ? node : nil }
+        let kids = (node.children ?? []).compactMap { keepingPaths($0, paths: paths, autoExpand: &autoExpand) }
+        guard !kids.isEmpty else { return nil }
+        autoExpand.insert(node.path)
+        var copy = node
+        copy.children = kids
+        return copy
     }
 
     /// Keep a node when its own name matches, or when any descendant does — a matching

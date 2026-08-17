@@ -122,12 +122,17 @@ public final class LiveSvodClient: SvodClient, @unchecked Sendable {
     }
     public func graph() async throws -> Graph { try await get("/api/v1/graph", query: vaulted()) }
 
-    public func graphCommunities(query: String?, level: Int?, limit: Int?) async throws -> GraphCommunities {
+    public func graphCommunities(query: String?, level: Int?, limit: Int?, members: String?) async throws -> GraphCommunities {
         var items: [URLQueryItem] = []
         if let query, !query.isEmpty { items.append(.init(name: "query", value: query)) }
         if let level { items.append(.init(name: "level", value: String(level))) }
         if let limit { items.append(.init(name: "limit", value: String(limit))) }
+        if let members { items.append(.init(name: "members", value: members)) }
         return try await get("/api/v1/graph/communities", query: vaulted(items))
+    }
+
+    public func graphCommunity(id: String) async throws -> GraphCommunity {
+        try await get("/api/v1/graph/community", query: vaulted([.init(name: "id", value: id)]))
     }
 
     public func graphStatus() async throws -> GraphStatus {

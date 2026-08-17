@@ -27,6 +27,23 @@ public final class AppModel: ObservableObject {
 
     // Cross-feature state
     @Published public var selectedPath: String?
+
+    /// A theme the user selected, narrowing the notes tree to its members.
+    ///
+    /// Themes only became useful once selecting one *led somewhere*: showing a wall of member paths
+    /// and scoping a graph that does not contain the similarity edges the theme is made of was two
+    /// dead ends. Filtering the tree is the action a person actually wants — open these notes.
+    public struct ThemeFilter: Equatable {
+        public let id: String
+        public let title: String
+        public let paths: Set<String>
+        public init(id: String, title: String, paths: Set<String>) {
+            self.id = id; self.title = title; self.paths = paths
+        }
+    }
+
+    @Published public var themeFilter: ThemeFilter?
+
     @Published public var connection: ConnectionState = .disconnected
     @Published public var latestEvent: SvodEvent?
     @Published public var activeConflict: ConflictBody?

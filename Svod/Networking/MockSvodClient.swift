@@ -129,10 +129,24 @@ public final class MockSvodClient: SvodClient, @unchecked Sendable {
         return Self.graph(for: currentVault)
     }
 
-    public func graphCommunities(query: String?, level: Int?, limit: Int?) async throws -> GraphCommunities {
+    public func graphCommunities(query: String?, level: Int?, limit: Int?, members: String?) async throws -> GraphCommunities {
         try await gate()
         if behavior == .empty { return GraphCommunities(state: "NOT_BUILT", stale: false, communities: []) }
-        return GraphCommunities(state: "READY", stale: false, communities: Self.communities)
+        // Mirror the engine: a listing carries a preview, not the whole membership.
+        let sample = (members ?? "full") != "full"
+        return GraphCommunities(
+            state: "READY", stale: false,
+            communities: sample ? Self.communities.map { c in
+                GraphCommunity(id: c.id, level: c.level, title: c.title, summary: c.summary,
+                               size: c.size, members: Array(c.members.prefix(5)))
+            } : Self.communities
+        )
+    }
+
+    public func graphCommunity(id: String) async throws -> GraphCommunity {
+        try await gate()
+        guard let c = Self.communities.first(where: { $0.id == id }) else { throw SvodClientError.notFound }
+        return c
     }
 
     public func graphStatus() async throws -> GraphStatus {
