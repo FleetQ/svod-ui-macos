@@ -19,6 +19,22 @@ Corrects `mem:svod-ui-update-system` / auto-memory which said the :7619 engine r
 3. `launchctl kickstart -k gui/501/dev.svod.engine` (uid 501)
 4. Poll readiness with a **JS fetch** to `http://127.0.0.1:7619/ready` — NOT curl
    (context-mode hook silently blocks curl/wget → empty output looks like "refused").
+## HAZARD — installDist swaps the jar under the RUNNING JVM (hit 2026-08-17)
+
+`build/install/svod-engine/lib/` IS the live engine's classpath. Running `installDist` while
+:7619 is up replaces the jar the JVM is still lazily loading classes from. Routes already
+exercised keep working, so **the damage is invisible until something hits a cold code path** —
+here `/api/v1/graph` began returning `500 dev/svod/engine/api/GraphNodeDto`, a class that had
+simply never been loaded before the swap.
+
+- **Never run installDist from a feature branch while the daily driver is up.** Build in a
+  separate `git worktree` (`git worktree add --detach /tmp/x <ref>`), then copy the jar over and
+  `kickstart` — that way the live engine only ever changes at a restart boundary.
+- Recovery from an already-swapped jar: build the intended ref in a worktree, copy its
+  `svod-engine-<version>.jar` into the live lib dir, `launchctl kickstart -k gui/501/dev.svod.engine`.
+- After any installDist, check the lib dir holds exactly ONE `svod-engine-*.jar` — the classpath
+  is a `lib/*` glob, so a leftover old jar puts two versions on it.
+
 - Restart timing: kickstart -k SIGKILLs the old proc; there's a ~2s port-bind overlap
   (a `BindException` shows in engine.err.log — HARMLESS, KeepAlive+ThrottleInterval retries)
   then a ~24s cold start (Lucene mmap). Poll for ~40-60s; don't conclude failure early.
