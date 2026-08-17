@@ -159,6 +159,26 @@ if [ "${PUBLISH:-0}" = "1" ]; then
       sleep 20
     fi
   done
+  # A release can come back as a DRAFT, and a draft creates NO TAG — so `git ls-remote` shows
+  # nothing while `gh release view` happily shows the asset. Observed on v0.2.19 during a GitHub
+  # incident: two `create` attempts failed, the third produced a draft, and the tag was simply
+  # absent until it was published by hand. Sparkle would have served an enclosure URL pointing at a
+  # release nobody could download.
+  if [ "$published" = "1" ]; then
+    if [ "$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null)" = "true" ]; then
+      echo "==> release came back as a draft — publishing it so the tag is created"
+      gh release edit "$TAG" --draft=false >/dev/null || {
+        echo "ERROR: $TAG is a DRAFT and could not be published. No tag exists yet." >&2
+        echo "       Fix with: gh release edit $TAG --draft=false" >&2
+        exit 1
+      }
+    fi
+    # The tag is what the appcast enclosure URL depends on; verify it actually exists.
+    if ! git ls-remote --tags origin "refs/tags/$TAG" | grep -q "$TAG"; then
+      echo "ERROR: $TAG is not on the remote — the appcast enclosure URL would 404." >&2
+      exit 1
+    fi
+  fi
   if [ "$published" != "1" ]; then
     echo "ERROR: could not publish $TAG after 5 attempts. The appcast commit IS pushed;" >&2
     echo "       re-run: gh release create $TAG \"$DMG\" --title \"Svod for macOS $VERSION\"" >&2
