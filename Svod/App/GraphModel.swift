@@ -39,6 +39,30 @@ public final class GraphModel: ObservableObject {
     @Published public var newSinceBuild: Int?
     /// Of those, the ones on no theme at all — the part a rebuild would actually fix.
     @Published public var pendingNotes = 0
+    /// Share of attached notes that would now be placed elsewhere; nil when the engine cannot say.
+    @Published public var driftRatio: Double?
+
+    /// Which hierarchy level the pane is showing; nil means the coarsest (the engine's default).
+    ///
+    /// Worth exposing because the coarse level is the least precise one: measured on the real vault,
+    /// its median theme holds 44 notes and the largest holds 320, while one level down the median is
+    /// 7. The finer levels were reachable through the API from the start and unreachable from the UI.
+    @Published public var level: Int?
+    /// How many levels this vault's graph has, so the picker only offers ones that exist.
+    @Published public var levelCount = 0
+
+    /// Themes worth listing.
+    ///
+    /// A Louvain level partitions the WHOLE corpus, so most of its communities are single notes that
+    /// simply had no close neighbour — measured, the coarsest level of `personal` has 546 communities
+    /// of which 38 have three or more members. Those singletons are rows with a filename for a title
+    /// and nothing to say; the engine already hides them from summarisation for the same reason.
+    public var visibleCommunities: [GraphCommunity] {
+        communities.filter { $0.size >= Self.minThemeSize }
+    }
+
+    /// Mirrors the engine's `minCommunitySize` default — the size below which it will not summarise.
+    private static let minThemeSize = 3
 
     public init(client: SvodClient) { self.client = client }
 
@@ -64,6 +88,21 @@ public final class GraphModel: ObservableObject {
         communitiesStale = false
         newSinceBuild = nil
         pendingNotes = 0
+        driftRatio = nil
+        level = nil
+        levelCount = 0
+    }
+
+    /// Switch the pane to a different hierarchy level and reload it.
+    ///
+    /// Clears the theme selection first: ids are per-level, so keeping one would leave the notes tree
+    /// filtered to a theme that is no longer on screen.
+    public func showLevel(_ next: Int?) async {
+        guard next != level else { return }
+        level = next
+        selectedCommunityID = nil
+        app?.themeFilter = nil
+        await loadCommunities()
     }
 
     /// Load the thematic communities. Only called when the engine advertises 0.24.0 or newer.
@@ -76,10 +115,16 @@ public final class GraphModel: ObservableObject {
             communitiesStale = status.stale
             newSinceBuild = status.newSinceBuild
             pendingNotes = status.pendingCount ?? 0
+            driftRatio = status.driftRatio
+            levelCount = status.levelCount
+            // A level that no longer exists (vault switched, graph rebuilt shallower) must not be
+            // requested — the engine would clamp it silently and the picker would lie about what is
+            // on screen.
+            if let l = level, l >= status.levelCount { level = nil }
             guard status.state != "NOT_BUILT" else { communities = []; return }
             // `sample`, not `full`: the complete membership of 50 themes was ~44k tokens / 177 KB of
             // paths the list never shows. The one theme in focus fetches its own via graphCommunity.
-            let result = try await client.graphCommunities(query: nil, level: nil, limit: 50, members: "sample")
+            let result = try await client.graphCommunities(query: nil, level: level, limit: 50, members: "sample")
             communities = result.communities
             communitiesState = result.state
             communitiesStale = result.stale
@@ -90,6 +135,7 @@ public final class GraphModel: ObservableObject {
             communitiesState = "NOT_BUILT"
             newSinceBuild = nil
             pendingNotes = 0
+            driftRatio = nil
         }
     }
 

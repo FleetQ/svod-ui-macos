@@ -12,12 +12,18 @@
 
 /* Begin PBXFileReference section */
 		A1000000000000000000000F /* Svod.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Svod.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A10000000000000000000031 /* SvodTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SvodTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		A1000000000000000000000A /* Svod */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = Svod;
+			sourceTree = "<group>";
+		};
+		A10000000000000000000030 /* SvodTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = SvodTests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -31,6 +37,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A10000000000000000000034 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -38,6 +51,7 @@
 			isa = PBXGroup;
 			children = (
 				A1000000000000000000000A /* Svod */,
+				A10000000000000000000030 /* SvodTests */,
 				A10000000000000000000009 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -46,6 +60,7 @@
 			isa = PBXGroup;
 			children = (
 				A1000000000000000000000F /* Svod.app */,
+				A10000000000000000000031 /* SvodTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -76,7 +91,48 @@
 			productReference = A1000000000000000000000F /* Svod.app */;
 			productType = "com.apple.product-type.application";
 		};
+		A10000000000000000000032 /* SvodTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A10000000000000000000038 /* Build configuration list for PBXNativeTarget "SvodTests" */;
+			buildPhases = (
+				A10000000000000000000033 /* Sources */,
+				A10000000000000000000034 /* Frameworks */,
+				A10000000000000000000035 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A10000000000000000000039 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				A10000000000000000000030 /* SvodTests */,
+			);
+			name = SvodTests;
+			packageProductDependencies = (
+			);
+			productName = SvodTests;
+			productReference = A10000000000000000000031 /* SvodTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
+
+/* Begin PBXContainerItemProxy section */
+		A1000000000000000000003A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A10000000000000000000000 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A10000000000000000000006;
+			remoteInfo = Svod;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXTargetDependency section */
+		A10000000000000000000039 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A10000000000000000000006 /* Svod */;
+			targetProxy = A1000000000000000000003A /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin PBXProject section */
 		A10000000000000000000000 /* Project object */ = {
@@ -88,6 +144,10 @@
 				TargetAttributes = {
 					A10000000000000000000006 = {
 						CreatedOnToolsVersion = 17.0;
+					};
+					A10000000000000000000032 = {
+						CreatedOnToolsVersion = 17.0;
+						TestTargetID = A10000000000000000000006;
 					};
 				};
 			};
@@ -110,6 +170,7 @@
 			projectRoot = "";
 			targets = (
 				A10000000000000000000006 /* Svod */,
+				A10000000000000000000032 /* SvodTests */,
 			);
 		};
 /* End PBXProject section */
@@ -122,10 +183,24 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A10000000000000000000035 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		A10000000000000000000002 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A10000000000000000000033 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -258,7 +333,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 20;
+				CURRENT_PROJECT_VERSION = 21;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -267,7 +342,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.2.18;
+				MARKETING_VERSION = 0.2.19;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.svod.Svod;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -282,7 +357,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 20;
+				CURRENT_PROJECT_VERSION = 21;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -291,11 +366,41 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.2.18;
+				MARKETING_VERSION = 0.2.19;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.svod.Svod;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		A10000000000000000000036 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 21;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 0.2.19;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.svod.SvodTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Svod.app/Contents/MacOS/Svod";
+			};
+			name = Debug;
+		};
+		A10000000000000000000037 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 21;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 0.2.19;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.svod.SvodTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Svod.app/Contents/MacOS/Svod";
 			};
 			name = Release;
 		};
@@ -316,6 +421,15 @@
 			buildConfigurations = (
 				A1000000000000000000000D /* Debug */,
 				A1000000000000000000000E /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A10000000000000000000038 /* Build configuration list for PBXNativeTarget "SvodTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A10000000000000000000036 /* Debug */,
+				A10000000000000000000037 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
