@@ -37,7 +37,45 @@ simply never been loaded before the swap.
 
 - Restart timing: kickstart -k SIGKILLs the old proc; there's a ~2s port-bind overlap
   (a `BindException` shows in engine.err.log — HARMLESS, KeepAlive+ThrottleInterval retries)
-  then a ~24s cold start (Lucene mmap). Poll for ~40-60s; don't conclude failure early.
+  then the cold start below. Poll ~30s; a restart that has not answered in a minute is a real
+  failure now, not a slow boot.
+
+## Cold start — AUTHORITATIVE, since engine v1.18.1 (2026-08-18)
+
+**~13 s on the 3,096-note `personal` vault. The old "25 s – 7.5 min, poll up to 8 min" advice is
+DEAD** — it is still quoted in older memories as history; do not act on it.
+
+Per-phase, from the `vault <id>: <phase> took <n> ms` lines v1.18.0 added to `VaultContext`:
+
+| phase (`personal`) | before v1.18.1 | now |
+|---|---|---|
+| engine open | 15,340 ms | ~0.9–1.4 s |
+| index start | 1 ms | 1–5 ms |
+| file watcher start | 34,491 ms | ~1.7–2.8 s |
+| graph start | 2,380 ms | ~2–3 s (now the largest) |
+| **`/ready`** | **~52 s** | **12.6–14.0 s** |
+
+Two causes, both measured, both fixed in v1.18.1:
+
+1. **The watcher hashed file CONTENT under the vault root** — 97 MB `.git` + 839 MB `.svod`
+   (Lucene), which the listener then discards by path. `DirectoryWatcher.build()` is only 141 ms;
+   **`watchAsync()`** is what blocked. Now `FileHasher.LAST_MODIFIED_TIME`. Chosen over the two
+   *faster* options on purpose: `fileHashing(false)` drops the de-duplication that suppresses an
+   event for a touched-but-unchanged file, and watching hand-picked children instead of the root
+   silently stops watching new top-level entries.
+   *The tell that cracked it: `work`, a **two-note** vault, paid 4,717 ms — so the cost was never
+   about notes.*
+2. **`recover()` ran `commitAll` on every boot** — jgit `add`/`status` stat every tracked file, a
+   cost this codebase had already documented and routed around for the write path (`commitPaths`)
+   but never for boot. Native `git status --porcelain` answers the same question in **20 ms vs
+   15.3 s** and now gates it. Recovery is NOT narrowed: an offline edit is an uncommitted change,
+   `status` sees it, the commit still happens; any failure to answer falls through to the full walk.
+
+Guarded by `ColdStartTest` + the pre-existing `CrashRecoveryTest` (both fail if the skip is made
+unconditional) and by a same-length-rewrite watcher test (the risk of mtime+size vs content).
+
+**If a boot is slow again, read the phase lines first** — they are already in the log, and they are
+what turned "cold start is 25 s – 7.5 min" from folklore into two fixable numbers.
 
 ## Stop→Start dead-end (UI, FIXED in app v0.2.2 — 2026-07-02)
 - App's Settings→Engine **Stop = `launchctl bootout`** → the agent is fully UNLOADED from
@@ -50,7 +88,7 @@ simply never been loaded before the swap.
 - Fix (commit `d1fe6d3`, shipped app v0.2.2): start() runs launchctl via a nonisolated
   async helper with exit-status check; on kickstart failure it bootstraps the plist and
   retries; /ready poll window 20s→90s (real cold start incl. semantic-index check took
-  ~55s live — the old 24s estimate is a lower bound).
+  ~55s live — the old 24s estimate is a lower bound). Both figures are pre-v1.18.1 history.
 - Diagnosis tell-tale seen that day: agent at `runs = 81` (crash loop on
   `BindException: Address already in use` while something else held :7619), then booted
   out entirely. Check BOTH: `launchctl print gui/501/dev.svod.engine` AND
@@ -61,7 +99,7 @@ simply never been loaded before the swap.
   engine was long ready. Root cause: `EngineModel.connect()` had NO retry-on-failure —
   the 1.6–8s backoff only ran via `handleDisconnect()` (i.e., after a previously
   SUCCESSFUL connection dropped), and even that chain died after one failed attempt.
-  App launched during an engine cold start (25s–7.5min!) → one failed /ready →
+  App launched during an engine cold start (25s–7.5min as it was THEN; ~13 s since v1.18.1) → one failed /ready →
   parked in `.disconnected` forever until app relaunch.
 - Fix: `scheduleRetry()` (retryTask + backoff) called from every connect() failure path,
   start()-timeout, and handleDisconnect; cancelled on explicit disconnect()/stop() and

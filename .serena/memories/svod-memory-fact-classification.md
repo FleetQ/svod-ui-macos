@@ -111,7 +111,7 @@ that revoked a good memory is not.
   **before** `installDist`, never after — use a single `./gradlew clean installDist`, then
   `launchctl kickstart -k gui/501/dev.svod.engine`. Verify nothing is running from a dir before
   deleting it (`lsof +D`, `ps -Ao pid,command | grep java`).
-- **Cold start observed 7.5 min** on the first restart (upper end of the documented 25s–7.5min
+- **Cold start observed 7.5 min** on the first restart (upper end of what was THEN documented as 25s–7.5min; fixed in v1.18.1 → ~13 s
   range; port 7619 is NOT bound for most of it — the process looks idle at ~0.6% CPU but is fine),
   then **48s** on the next restart with a warm index. Poll `/ready` with a **JS fetch**, not curl
   (context-mode hook blocks curl).

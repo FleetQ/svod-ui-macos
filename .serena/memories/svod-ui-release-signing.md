@@ -46,6 +46,29 @@ Published: `gh release create v0.2.0` + pushed appcast to main. LIVE-verified th
 Sparkle. This is the part the earlier CI approach could NOT validate — the local signed
 flow made it real. MARKETING_VERSION bumped 0.1.0→0.2.0 (build 2).
 
+## THREE ways `release.sh` reported success while shipping something broken (all fixed 2026-08-17)
+
+Each surfaced on a real release; each is now a hard error in the script.
+
+1. **Publish order.** `gh release create` tags whatever the REMOTE HEAD is, so creating the release
+   before pushing the appcast commit tagged the commit *before* the release. This is the tag drift
+   noted repeatedly in earlier entries — it was never cosmetic, it was an ordering bug. Now: commit
+   and push the appcast FIRST, then create the release.
+2. **`set -e` + a swallowed failure.** During a GitHub incident, `gh release create` failed, its
+   `|| gh release upload` fallback failed with "release not found", and `set -e` killed the script
+   *before* the appcast commit — leaving artifacts built, appcast modified but uncommitted, and no
+   release. Now: the publish is retried 5×, and a genuine `git commit` failure exits before pushing
+   or tagging instead of being hidden behind `|| true`.
+3. **A DRAFT release creates NO TAG.** On v0.2.19 the third `create` attempt produced a draft.
+   `gh release view` cheerfully showed the DMG while `git ls-remote` showed no tag at all, and the
+   script printed "published" and exited 0. The appcast enclosure points at
+   `releases/download/<tag>/…`, so Sparkle would have offered an update that 404s on download. Now:
+   after publishing, the script checks `isDraft`, publishes it if so, and verifies `refs/tags/<tag>`
+   is actually on the remote.
+
+**The pattern:** every one of these passed the script's own success check. Verify the TAG on the
+remote and the enclosure URL, not the script's exit code.
+
 ## GOTCHA — don't pipe a long signed build through `| head`
 `Scripts/release.sh … | grep … | head -60` SIGPIPEs the chain mid-archive (empty exit
 code, truncated view). The script may still finish (it did), but to watch it reliably

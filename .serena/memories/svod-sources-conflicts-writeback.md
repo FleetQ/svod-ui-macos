@@ -17,6 +17,7 @@ User asked "агентска редакция изчиства ли се от ф
 
 ## Gotchas learned
 - AppApiContractTest has a HARDCODED implemented-routes list — new route ⇒ add there or exact-match assert fails. MCP tool count is hardcoded in McpHttpIntegrationTest/McpTlsTest (now 15).
-- Engine cold start VARIES WILDLY: 25s–7.5min. The long tail is methvin DirectoryWatcher hashing the whole big personal vault at boot (thread dump: Murmur3F in initWatcherState, RUNNABLE — not stuck). Poll /ready up to ~8 min before concluding failure; `kill -QUIT <pid>` → thread dump in engine.out.log is the diagnostic.
+- **RESOLVED in engine v1.18.1 (2026-08-18): cold start is now ~13 s** — see `svod-engine-deploy-launchd`. Note what the line below already knew and nobody acted on for months: the thread dump named **`Murmur3F in initWatcherState`**, i.e. content hashing, which is exactly what the fix removed. A correct diagnosis sitting in a memory is not a fix.
+- (historical) Engine cold start VARIES WILDLY: 25s–7.5min. The long tail is methvin DirectoryWatcher hashing the whole big personal vault at boot (thread dump: Murmur3F in initWatcherState, RUNNABLE — not stuck). Poll /ready up to ~8 min before concluding failure; `kill -QUIT <pid>` → thread dump in engine.out.log is the diagnostic.
 - MCP events (SvodTools) don't carry `data.vault` — UI Activity per-vault filter misses agent commits; possible follow-up.
 - Известен остатък: engine 0.20.0 е само на main + deployed local; няма tagged engine release (последният е v1.8.1). Cut v1.9.0 when desired.
