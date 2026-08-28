@@ -65,6 +65,9 @@ public final class SettingsStore: ObservableObject {
     // MARK: Startup
     @Published public var reopenLastNote: Bool { didSet { d.set(reopenLastNote, forKey: key("reopenLastNote")) } }
     @Published public var lastOpenedPath: String? { didSet { d.set(lastOpenedPath, forKey: key("lastOpenedPath")) } }
+    /// The vault `lastOpenedPath` belongs to. A path alone is ambiguous across vaults —
+    /// reopening it against whichever vault happens to be default 404s the editor.
+    @Published public var lastOpenedVault: String? { didSet { d.set(lastOpenedVault, forKey: key("lastOpenedVault")) } }
 
     public init() {
         let ud = UserDefaults.standard
@@ -105,6 +108,7 @@ public final class SettingsStore: ObservableObject {
 
         reopenLastNote = b("reopenLastNote", true)
         lastOpenedPath = d.string(forKey: "svod.settings.lastOpenedPath")
+        lastOpenedVault = d.string(forKey: "svod.settings.lastOpenedVault")
     }
 
     /// Endpoint as a URL, derived from host + port. Loopback assumption preserved.

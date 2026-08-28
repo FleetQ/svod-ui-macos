@@ -126,6 +126,7 @@ public final class AppModel: ObservableObject {
     public func open(path: String) {
         selectedPath = path
         settings.lastOpenedPath = path
+        settings.lastOpenedVault = vault.activeVaultId
         if centerMode == .graph { centerMode = .editor }
         commandPaletteVisible = false
     }
@@ -180,12 +181,29 @@ public final class AppModel: ObservableObject {
         if settings.baseURL != client.baseURL {
             (client as? LiveSvodClient)?.updateBaseURL(settings.baseURL)
         }
-        if settings.reopenLastNote, let last = settings.lastOpenedPath {
-            selectedPath = last
-        }
         engine.startConnecting()
-        // Load the vault list (degrades to a single implicit vault on older engines).
-        Task { await vault.load() }
+        // Load the vault list (degrades to a single implicit vault on older engines),
+        // THEN reopen the last note. Selecting the path first raced this: the editor's
+        // `.task` fired against whatever vault was active (the engine default), so a note
+        // remembered from any other vault answered 404 and the pane showed "Not found".
+        Task {
+            await vault.load()
+            reopenLastNoteIfPossible()
+        }
+    }
+
+    /// Reopen the last note, but only when we know which vault it came from and that
+    /// vault still exists. A remembered path with no remembered vault (written by a build
+    /// before `lastOpenedVault`, or by a vault that has since been deleted) is dropped
+    /// rather than opened against the wrong vault — the empty state beats a 404.
+    private func reopenLastNoteIfPossible() {
+        guard settings.reopenLastNote,
+              let last = settings.lastOpenedPath,
+              let vaultId = settings.lastOpenedVault,
+              vault.vaults.contains(where: { $0.id == vaultId })
+        else { return }
+        vault.switchVault(vaultId)   // no-op when it is already active; clears selectedPath otherwise
+        selectedPath = last
     }
 
     /// Reload vault-scoped state after a reconnect (e.g. engine restarted).
