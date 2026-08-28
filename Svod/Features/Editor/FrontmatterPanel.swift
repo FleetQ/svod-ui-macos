@@ -14,7 +14,7 @@ struct FrontmatterPanel: View {
     let frontmatter: Frontmatter
     var onChange: (Frontmatter) -> Void
 
-    @State private var expanded = true
+    @AppStorage("editor.propertiesExpanded") private var expanded = false
     @State private var newChipText: [String: String] = [:]
 
     var body: some View {
