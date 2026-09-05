@@ -73,6 +73,7 @@ public final class MultiEngineClient: SvodClient, @unchecked Sendable {
     public func configure(remotes built: [Remote]) {
         lock.lock()
         remotes = Dictionary(uniqueKeysWithValues: built.map { ($0.id, $0) })
+        insecure = insecure.intersection(remotes.keys)   // a profile that is gone is not "insecure" any more
         let key = activeKey
         lock.unlock()
         setActiveVault(key)   // re-points `current` at the rebuilt client (or back to local)

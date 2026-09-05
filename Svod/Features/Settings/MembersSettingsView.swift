@@ -135,6 +135,7 @@ struct MembersSettingsView: View {
 
     var body: some View {
         MembersBody(model: MembersModel(client: app.client), engineLabel: engineLabel,
+                    engineReportsLastUsed: app.engine.apiVersionAtLeast(0, 31),
                     vaults: app.vault.vaults.filter { $0.engineId == app.vault.activeVault?.engineId })
             .id(app.vault.activeVault?.engineId ?? "local")
     }
@@ -144,6 +145,8 @@ struct MembersSettingsView: View {
 private struct MembersBody: View {
     @StateObject var model: MembersModel
     let engineLabel: String
+    /// Contract ≥ 0.31: "never used" is real information; on an older engine it would be a lie.
+    var engineReportsLastUsed: Bool = false
     let vaults: [Vault]
     @State private var editing: MemberDraft?
     @State private var pendingRevoke: UserInfo?
@@ -231,7 +234,8 @@ private struct MembersBody: View {
                             Text(u.userId).font(Typography.caption).foregroundStyle(.secondary)
                             if u.admin { StatusPill("admin", tone: .accent) }
                             // A key that has gone quiet is the one to revoke; "never" is a key that was handed over but not used.
-                            if model.reportsLastUsed {
+                            // On a 0.31 engine "never used" is real information; on an older one it would be a lie.
+                            if engineReportsLastUsed || model.reportsLastUsed {
                                 Text(MembersModel.lastSeen(u.lastUsedDate))
                                     .font(Typography.caption2).foregroundStyle(.tertiary)
                                     .help(u.lastUsedAt.map { "Key last used \($0)" } ?? "This key has never authenticated")
