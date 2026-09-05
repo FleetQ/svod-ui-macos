@@ -183,6 +183,20 @@ final class MultiEngineClientTests: XCTestCase {
         catch let e as SvodClientError { XCTAssertTrue(e.isOffline, "\(e)") }
     }
 
+    @MainActor func testRemovingAnInsecureProfileClearsItsMark() async throws {
+        let defaults = UserDefaults(suiteName: "svod.tests.insecure2.\(UUID().uuidString)")!
+        let store = EngineProfileStore(defaults: defaults, secretsDir: FileManager.default.temporaryDirectory.appendingPathComponent("svod-insecure2-\(UUID().uuidString)"))
+        _ = try store.add(EngineProfile(id: "old", name: "Old", baseURL: URL(string: "http://engine.company.example:7517")!), apiKey: "svk_leak")
+        _ = try store.add(EngineProfile(id: "ok", name: "Ok", baseURL: URL(string: "https://svod.example.com")!), apiKey: "svk_fine")
+        let router = MultiEngineClient(local: EngineMock(tag: "local"))
+        router.configure(store: store)
+        XCTAssertEqual(router.insecure, ["old"])
+        store.remove("old")
+        router.configure(store: store)
+        XCTAssertTrue(router.insecure.isEmpty, "a removed profile is not 'insecure' any more: \(router.insecure)")
+        XCTAssertEqual(router.remoteList.map(\.id), ["ok"])
+    }
+
     func testVanishedProfileFailsClosedInsteadOfWritingLocally() async throws {
         let (router, local, _) = make()
         router.setActiveVault("remote-docs@central")
