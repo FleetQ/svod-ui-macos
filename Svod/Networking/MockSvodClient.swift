@@ -103,6 +103,23 @@ public class MockSvodClient: SvodClient, @unchecked Sendable {
         return FileContent(path: path, revision: revision, content: base)
     }
 
+    // Explicit-vault variants: the mock has no per-request vault routing to exercise, so
+    // they forward to the ambient ones (which a test subclass can override to record calls).
+    public func history(path: String, max: Int?, inVault vault: String?) async throws -> [CommitInfo] {
+        try await history(path: path, max: max)
+    }
+    public func revision(path: String, revision: String, inVault vault: String?) async throws -> FileContent {
+        try await self.revision(path: path, revision: revision)
+    }
+    @discardableResult
+    public func writeFile(path: String, content: String, expectedRevision: String?, inVault vault: String?) async throws -> WriteResult {
+        try await writeFile(path: path, content: content, expectedRevision: expectedRevision)
+    }
+    @discardableResult
+    public func deleteFile(path: String, expectedRevision: String?, inVault vault: String?) async throws -> WriteResult {
+        try await deleteFile(path: path, expectedRevision: expectedRevision)
+    }
+
     // MARK: graph / links
     public func fileLinks(path: String) async throws -> FileLinks {
         try await gate()

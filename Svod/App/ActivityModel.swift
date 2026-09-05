@@ -132,38 +132,35 @@ public final class ActivityModel: ObservableObject {
         guard Self.canRevert(event), let path = event.data.path, let commit = event.data.commit else {
             return .failed("This change can't be reverted from here.")
         }
-        // Every call below resolves the vault at call time, and a vault switch can land on
-        // any suspension point. Re-check after each await so a switch mid-revert aborts
-        // before anything is written, instead of writing vault A's content into vault B.
+        // Pin the vault into every request. The client resolves the ambient vault when it
+        // BUILDS a request, after the hop off the main actor, so a vault switch queued
+        // behind any check here would otherwise retarget the write to the new vault. A
+        // re-check after each await narrows that window; an explicit vault closes it.
         let vault = app?.vault.activeVaultId
-        func sameVault() -> Bool { app?.vault.activeVaultId == vault }
-        let switched = RevertOutcome.failed("The active vault changed during the revert. Nothing was written.")
         do {
             // MCP events carry no vault tag and this runs against the active vault; a path
             // from another vault either 404s here or has a different head, so this check
             // also fails closed on a wrong-vault item.
-            let head = try await client.history(path: path, max: 1).first?.commit
+            let head = try await client.history(path: path, max: 1, inVault: vault).first?.commit
             guard head == commit else { return .changedSince }
-            guard sameVault() else { return switched }
 
             let parent: FileContent?
             do {
-                parent = try await client.revision(path: path, revision: "\(commit)~1")
+                parent = try await client.revision(path: path, revision: "\(commit)~1", inVault: vault)
             } catch SvodClientError.badRequest, SvodClientError.notFound {
                 parent = nil
             }
-            guard sameVault() else { return switched }
 
-            let current = try await client.readFile(path: path)
-            guard sameVault() else { return switched }
+            let current = if let vault { try await client.readFile(path: path, inVault: vault) }
+                          else { try await client.readFile(path: path) }
             if let parent {
                 _ = try await client.writeFile(path: path, content: parent.content,
-                                               expectedRevision: current.revision)
+                                               expectedRevision: current.revision, inVault: vault)
                 markReviewed(event)
                 return .reverted
             }
             // No parent copy: the agent created this note. Soft-delete it (restorable).
-            _ = try await client.deleteFile(path: path, expectedRevision: current.revision)
+            _ = try await client.deleteFile(path: path, expectedRevision: current.revision, inVault: vault)
             markReviewed(event)
             app?.refreshActiveVault()
             return .trashed

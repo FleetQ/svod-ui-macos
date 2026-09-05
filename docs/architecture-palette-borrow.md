@@ -1,6 +1,6 @@
 # Architecture — Palette borrow sprint
 
-Reads `docs/design-palette-borrow.md`. All changes in svod-ui-macos; the frozen `SvodClient` contract is untouched (every call used already exists: `history`, `revision`, `readFile`, `writeFile`, `deleteFile`).
+Reads `docs/design-palette-borrow.md`. All changes in svod-ui-macos. The `SvodClient` protocol gains four explicit-vault variants (`history`/`revision`/`writeFile`/`deleteFile` with `inVault:`), the same extension pattern as `readFile(path:inVault:)`; no wire or engine change.
 
 ## A1 — Agent-change review
 
@@ -36,7 +36,7 @@ public static func canRevert(_ event: SvodEvent) -> Bool      // isReviewable &&
 - `trackPending` dedupes by commit (its own set, independent of the feed's filter settings, so a hidden feed type still lands in review), inserts at 0, trims to cap, persists.
 - Persistence: `JSONEncoder` of `[SvodEvent]` (already `Codable`) under `svod.activity.pending`; loaded in `init`; decode failure ⇒ empty list.
 - `canRevert` is an allowlist: tool ∈ {nil, `write`, `edit`}.
-- `revert` captures the active vault id first and re-checks it after every await (`.failed` if it changed — nothing written). Steps, in order, each mapped to an outcome:
+- `revert` captures the active vault id once and passes it as `inVault:` to `history`, `revision`, `readFile`, `writeFile`/`deleteFile` (new explicit-vault protocol variants on `SvodClient`, implemented by `LiveSvodClient` via `vaulted(_:vault:)`; the mock forwards to the ambient ones). Steps, in order, each mapped to an outcome:
   1. `guard canRevert` else `.failed("not revertible")`.
   2. `history(path, max: 1)` — if `first?.commit != commit` ⇒ `.changedSince` (list row keeps the item, shows the hint).
   3. `revision(path, "\(commit)~1")`: `badRequest`/`notFound` ⇒ parent has no copy of the file ⇒ agent created it ⇒ `readFile` then `deleteFile(path, expectedRevision:)` ⇒ `.trashed`, and `app.refreshActiveVault()`.

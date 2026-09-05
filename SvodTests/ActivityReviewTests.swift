@@ -142,6 +142,24 @@ final class ActivityReviewTests: XCTestCase {
         XCTAssertTrue(m.pending.isEmpty)
     }
 
+    func testRevertPinsTheVaultItValidatedAgainstIntoEveryRequest() async {
+        // The client resolves the ambient vault when it builds each request, off the main
+        // actor — a switch queued behind the model's checks would retarget the write.
+        let client = RecordingClient()
+        let app = AppModel(client: client)
+        await app.vault.load()
+        guard let vault = app.vault.activeVaultId else { return XCTFail("mock has no vault") }
+        let m = model(client)
+        m.app = app
+        m.ingest(agentWrite("c1"))
+
+        _ = await m.revert(agentWrite("c1"))
+
+        XCTAssertEqual(client.historyVaults, [vault])
+        XCTAssertEqual(client.revisionVaults, [vault])
+        XCTAssertEqual(client.writes.map(\.vault), [vault])
+    }
+
     func testRevertOfANoteTheAgentCreatedTrashesIt() async {
         let client = RecordingClient()
         client.parentError = .badRequest(nil)   // `<commit>~1` has no copy of the file
@@ -182,30 +200,35 @@ private final class RecordingClient: MockSvodClient {
     var writeError: SvodClientError?
 
     var revisionsAsked: [String] = []
-    var writes: [(path: String, content: String, expectedRevision: String?)] = []
+    var historyVaults: [String?] = []
+    var revisionVaults: [String?] = []
+    var writes: [(path: String, content: String, expectedRevision: String?, vault: String?)] = []
     var deletes: [(path: String, expectedRevision: String?)] = []
 
-    override func history(path: String, max: Int?) async throws -> [CommitInfo] {
-        [CommitInfo(commit: head, author: "friday", email: "", epochSeconds: 0, message: "m")]
+    override func history(path: String, max: Int?, inVault vault: String?) async throws -> [CommitInfo] {
+        historyVaults.append(vault)
+        return [CommitInfo(commit: head, author: "friday", email: "", epochSeconds: 0, message: "m")]
     }
 
-    override func revision(path: String, revision: String) async throws -> FileContent {
+    override func revision(path: String, revision: String, inVault vault: String?) async throws -> FileContent {
         revisionsAsked.append(revision)
+        revisionVaults.append(vault)
         if let parentError { throw parentError }
         return parent
     }
 
     override func readFile(path: String) async throws -> FileContent { current }
+    override func readFile(path: String, inVault vault: String) async throws -> FileContent { current }
 
     @discardableResult
-    override func writeFile(path: String, content: String, expectedRevision: String?) async throws -> WriteResult {
-        writes.append((path, content, expectedRevision))
+    override func writeFile(path: String, content: String, expectedRevision: String?, inVault vault: String?) async throws -> WriteResult {
+        writes.append((path, content, expectedRevision, vault))
         if let writeError { throw writeError }
         return WriteResult(path: path, revision: "r2", commit: "c2")
     }
 
     @discardableResult
-    override func deleteFile(path: String, expectedRevision: String?) async throws -> WriteResult {
+    override func deleteFile(path: String, expectedRevision: String?, inVault vault: String?) async throws -> WriteResult {
         deletes.append((path, expectedRevision))
         return WriteResult(path: ".trash/\(path)", revision: "del", commit: "c3")
     }

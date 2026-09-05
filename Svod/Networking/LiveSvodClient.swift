@@ -68,16 +68,26 @@ public final class LiveSvodClient: SvodClient, @unchecked Sendable {
 
     @discardableResult
     public func writeFile(path: String, content: String, expectedRevision: String?) async throws -> WriteResult {
+        try await writeFile(path: path, content: content, expectedRevision: expectedRevision, inVault: nil)
+    }
+
+    @discardableResult
+    public func writeFile(path: String, content: String, expectedRevision: String?, inVault vault: String?) async throws -> WriteResult {
         try await send("/api/v1/file", method: "PUT",
-                       query: vaulted([.init(name: "path", value: path)]),
+                       query: vaulted([.init(name: "path", value: path)], vault: vault),
                        body: WriteRequest(content: content, expectedRevision: expectedRevision))
     }
 
     @discardableResult
     public func deleteFile(path: String, expectedRevision: String?) async throws -> WriteResult {
+        try await deleteFile(path: path, expectedRevision: expectedRevision, inVault: nil)
+    }
+
+    @discardableResult
+    public func deleteFile(path: String, expectedRevision: String?, inVault vault: String?) async throws -> WriteResult {
         var q = [URLQueryItem(name: "path", value: path)]
         if let expectedRevision { q.append(.init(name: "expectedRevision", value: expectedRevision)) }
-        return try await sendNoBody("/api/v1/file", method: "DELETE", query: vaulted(q))
+        return try await sendNoBody("/api/v1/file", method: "DELETE", query: vaulted(q, vault: vault))
     }
 
     @discardableResult
@@ -94,10 +104,14 @@ public final class LiveSvodClient: SvodClient, @unchecked Sendable {
 
     // MARK: history
     public func history(path: String, max: Int?) async throws -> [CommitInfo] {
+        try await history(path: path, max: max, inVault: nil)
+    }
+
+    public func history(path: String, max: Int?, inVault vault: String?) async throws -> [CommitInfo] {
         var q = [URLQueryItem(name: "path", value: path)]
         if let max { q.append(.init(name: "max", value: String(max))) }
         struct Wrapper: Decodable { let commits: [CommitInfo] }
-        let w: Wrapper = try await get("/api/v1/file/history", query: vaulted(q))
+        let w: Wrapper = try await get("/api/v1/file/history", query: vaulted(q, vault: vault))
         return w.commits
     }
 
@@ -110,10 +124,14 @@ public final class LiveSvodClient: SvodClient, @unchecked Sendable {
     }
 
     public func revision(path: String, revision: String) async throws -> FileContent {
+        try await self.revision(path: path, revision: revision, inVault: nil)
+    }
+
+    public func revision(path: String, revision: String, inVault vault: String?) async throws -> FileContent {
         try await get("/api/v1/file/revision", query: vaulted([
             .init(name: "path", value: path),
             .init(name: "revision", value: revision),
-        ]))
+        ], vault: vault))
     }
 
     // MARK: graph / links
