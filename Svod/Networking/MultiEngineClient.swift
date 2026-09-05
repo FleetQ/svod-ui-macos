@@ -249,10 +249,12 @@ public final class MultiEngineClient: SvodClient, @unchecked Sendable {
         return try await t.client.importVault(source: source, into: into, vault: t.vault, followSymlinks: followSymlinks)
     }
 
-    // MARK: engine-level admin — the ACTIVE engine
-    public func updateCheck() async throws -> UpdateCheck { try await current.updateCheck() }
+    // MARK: engine self-update — THIS Mac's engine, like health/ready. A central engine is
+    // updated by its admin on its host; the Updates pane must never "download, swap and restart"
+    // a machine the user does not own just because a company vault is selected.
+    public func updateCheck() async throws -> UpdateCheck { try await local.updateCheck() }
     @discardableResult
-    public func updateApply() async throws -> UpdateApply { try await current.updateApply() }
+    public func updateApply() async throws -> UpdateApply { try await local.updateApply() }
 
     public func agents() async throws -> AgentsInfo { try await current.agents() }
     @discardableResult

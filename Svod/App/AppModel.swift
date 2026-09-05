@@ -252,6 +252,8 @@ public final class AppModel: ObservableObject {
                 try await vault.deleteVault(v.id)
             } catch let e as SvodClientError {
                 switch e {
+                case .notImplemented(let msg?):
+                    vaultActionError = msg   // e.g. a vault on a central engine
                 case .notImplemented, .notFound:
                     vaultActionError = "Deleting vaults needs a newer Svod engine."
                 case .http(409, _):

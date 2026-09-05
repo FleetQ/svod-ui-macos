@@ -32,10 +32,13 @@ final class MultiEngineClientTests: XCTestCase {
             return WriteResult(path: path, revision: "r1", commit: "c1")
         }
         override func health() async throws -> Health { served.append("health"); return Health(status: "ok") }
+        override func updateCheck() async throws -> UpdateCheck { served.append("updateCheck"); return try await super.updateCheck() }
+        override func updateApply() async throws -> UpdateApply { served.append("updateApply"); return try await super.updateApply() }
+        override func deleteVault(id: String, deleteFiles: Bool) async throws -> DeleteVaultResult { served.append("delete@\(id)"); return try await super.deleteVault(id: id, deleteFiles: deleteFiles) }
         override func me() async throws -> Me { served.append("me"); return Me(userId: tag, name: tag, admin: false, local: false) }
         override func events() -> AsyncThrowingStream<SvodEvent, Error> {
             AsyncThrowingStream { c in
-                c.yield(SvodEvent(type: .commitCreated, ts: 1, data: EventPayload(path: "\(tag).md", commit: "c-\(tag)", vault: tag == "local" ? "local-main" : nil)))
+                c.yield(SvodEvent(type: .commitCreated, ts: 1, data: EventPayload(path: "\(tag).md", commit: "c-\(tag)", vault: nil)))   // UNTAGGED on both engines: the router must tag each with that engine's default
                 c.finish()
             }
         }
@@ -58,6 +61,48 @@ final class MultiEngineClientTests: XCTestCase {
         XCTAssertEqual(vs.last?.role, "reader")
         XCTAssertTrue(vs.last!.isReadOnly)
         XCTAssertTrue(router.unreachable.isEmpty)
+    }
+
+    func testEngineSelfUpdateAlwaysTargetsThisMac() async throws {
+        let (router, local, remote) = make()
+        router.setActiveVault("remote-docs@central")
+        _ = try await router.updateCheck()
+        _ = try await router.updateApply()
+        XCTAssertEqual(local.served, ["updateCheck", "updateApply"])
+        XCTAssertTrue(remote.served.isEmpty, "a company vault being active must not update the company's engine")
+    }
+
+    func testLocalOnlyOperationsRefuseARemoteTarget() async throws {
+        let (router, local, remote) = make()
+        do { _ = try await router.deleteVault(id: "remote-docs@central", deleteFiles: false); XCTFail("must refuse") }
+        catch let e as SvodClientError { XCTAssertTrue(e.isNotImplemented) }
+        do { _ = try await router.importVault(source: "/tmp/x", into: nil, vault: "remote-docs@central", followSymlinks: false); XCTFail("must refuse") }
+        catch let e as SvodClientError { XCTAssertTrue(e.isNotImplemented) }
+        do { _ = try await router.registerSource(vault: "remote-docs@central", path: "/tmp/x", into: nil, followSymlinks: false, prune: false, autoSync: false, writeBack: false); XCTFail("must refuse") }
+        catch let e as SvodClientError { XCTAssertTrue(e.isNotImplemented) }
+        XCTAssertTrue(remote.served.isEmpty, "the remote engine was never asked")
+        // …while the same calls for a LOCAL vault still go through.
+        _ = try await router.deleteVault(id: "local-docs", deleteFiles: false)
+        XCTAssertEqual(local.served, ["delete@local-docs"])
+    }
+
+    func testUntaggedLocalEventsAreTaggedWithTheLocalDefault() async throws {
+        let (router, _, _) = make()
+        _ = try await router.vaults()   // learns the defaults
+        var seen: [String?] = []
+        // The merged stream ends when the LOCAL stream ends (a live socket never does; the mock's
+        // does at once), so the remote's event may or may not have arrived by then — the local one
+        // always has: it is yielded before its own stream finishes.
+        for try await e in router.events() { seen.append(e.data.vault) }
+        XCTAssertTrue(seen.contains("local-main"), "untagged local event must name the local default vault: \(seen)")
+        XCTAssertFalse(seen.contains(nil), "no event leaves the router untagged: \(seen)")
+    }
+
+    func testBasePathIsKeptInFrontOfEveryApiPath() {
+        XCTAssertEqual(LiveSvodClient.basePath(of: URL(string: "http://127.0.0.1:7517")!), "")
+        XCTAssertEqual(LiveSvodClient.basePath(of: URL(string: "https://svod.example.com/svod/")!), "/svod")
+        XCTAssertEqual(LiveSvodClient.websocketURL(from: URL(string: "https://svod.example.com/svod")!).absoluteString, "wss://svod.example.com/svod/api/v1/events")
+        XCTAssertEqual(LiveSvodClient.websocketURL(from: URL(string: "http://127.0.0.1:7517")!).absoluteString, "ws://127.0.0.1:7517/api/v1/events")
     }
 
     func testADeadRemoteLeavesTheLocalListIntact() async throws {
