@@ -350,7 +350,13 @@ public final class MultiEngineClient: SvodClient, @unchecked Sendable {
     public func events() -> AsyncThrowingStream<SvodEvent, Error> {
         let local = self.local
         let remotes = remoteList
-        let defaults: [String: String] = { lock.lock(); defer { lock.unlock() }; return remoteDefaults }()
+        // Looked up per event, not captured at stream start: EngineModel opens this stream
+        // before the first `vaults()` has taught us each remote's default vault id.
+        let defaultFor: (String) -> String? = { [weak self] pid in
+            guard let self else { return nil }
+            self.lock.lock(); defer { self.lock.unlock() }
+            return self.remoteDefaults[pid]
+        }
         return AsyncThrowingStream { continuation in
             let localTask = Task {
                 do {
@@ -366,7 +372,7 @@ public final class MultiEngineClient: SvodClient, @unchecked Sendable {
                         for try await e in r.client.events() {
                             var tagged = e
                             // Re-key so the vault gate (reconcile, activity filter) compares like with like.
-                            tagged.data.vault = VaultKey.make(e.data.vault ?? defaults[r.id] ?? "default", profileId: r.id)
+                            tagged.data.vault = VaultKey.make(e.data.vault ?? defaultFor(r.id) ?? "default", profileId: r.id)
                             continuation.yield(tagged)
                         }
                     } catch { /* a dropped remote stream is retried on the next (re)connect */ }

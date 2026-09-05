@@ -41,9 +41,13 @@ public final class VaultModel: ObservableObject {
             multiVaultUnavailable = false
             // Keep the current selection if still valid, else pick the default.
             if activeVaultId == nil || !vaults.contains(where: { $0.id == activeVaultId }) {
+                let previous = activeVaultId
                 let def = result.defaultVault
                 activeVaultId = def?.id
                 client.setActiveVault(Self.wireKey(def))
+                // The active vault VANISHED (a central engine was removed, a vault deleted elsewhere):
+                // the open note belongs to it and every pane must re-scope, exactly like a switch.
+                if previous != nil, previous != activeVaultId { app?.didSwitchVault() }
             }
             loadState = .loaded
         } catch let e as SvodClientError where e.isNotImplemented || e.isNotFoundLike {
