@@ -61,6 +61,32 @@ final class MembersModelTests: XCTestCase {
         XCTAssertFalse(m.unavailable)
     }
 
+    func testTwoMocksDoNotShareMembers() async throws {
+        let a = MockSvodClient(), b = MockSvodClient()
+        _ = try await a.createUser(CreateUserRequest(userId: "only-in-a", name: "A"))
+        let inA = try await a.users().users.contains { $0.userId == "only-in-a" }
+        let inB = try await b.users().users.contains { $0.userId == "only-in-a" }
+        XCTAssertTrue(inA)
+        XCTAssertFalse(inB, "mock state must be per instance, or tests depend on order")
+    }
+
+    func testLastSeenHandlesMissingAndPresentValues() {
+        XCTAssertEqual(MembersModel.lastSeen(nil), "never used")
+        XCTAssertNil(UserInfo(userId: "x", name: "x", lastUsedAt: "not a date").lastUsedDate)
+        let now = Date(timeIntervalSince1970: 1_757_070_000)
+        let twoHoursAgo = UserInfo(userId: "x", name: "x", lastUsedAt: ISO8601DateFormatter().string(from: now.addingTimeInterval(-7200))).lastUsedDate
+        XCTAssertTrue(MembersModel.lastSeen(twoHoursAgo, now: now).hasPrefix("last seen "), MembersModel.lastSeen(twoHoursAgo, now: now))
+        let engineFormat = UserInfo(userId: "x", name: "x", lastUsedAt: "2026-09-05T14:33:06.166Z").lastUsedDate
+        XCTAssertNotNil(engineFormat, "fractional seconds (the engine's format)")
+        XCTAssertTrue(MembersModel.lastSeen(engineFormat, now: now).hasPrefix("last seen "))
+    }
+
+    func testLastSeenIsHiddenUntilTheEngineReportsIt() async {
+        let m = MembersModel(client: MockSvodClient())   // the mock's users carry no lastUsedAt (a 0.30 engine)
+        await m.load()
+        XCTAssertFalse(m.reportsLastUsed, "'never used' for everyone would be a lie on an engine that does not report it")
+    }
+
     func testSlugFoldsCyrillicNames() {
         XCTAssertEqual(MemberDraft.slug("Мария Петрова"), "maria-petrova")
         XCTAssertEqual(MemberDraft.slug("  Ivan  "), "ivan")

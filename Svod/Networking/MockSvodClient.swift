@@ -221,19 +221,19 @@ public class MockSvodClient: SvodClient, @unchecked Sendable {
     public func settings() async throws -> Settings {
         try await gate()
         return Settings(vaultPath: "/Users/katsarov/Svod", apiVersion: "0.8.0",
-                        embedderProvider: Self.mockEmbedder.provider, embedderModel: Self.mockEmbedder.model,
-                        embedderDim: Self.mockEmbedder.dimension, host: "127.0.0.1",
-                        embedder: Self.mockEmbedder)
+                        embedderProvider: mockEmbedder.provider, embedderModel: mockEmbedder.model,
+                        embedderDim: mockEmbedder.dimension, host: "127.0.0.1",
+                        embedder: mockEmbedder)
     }
 
     public func indexStatus() async throws -> IndexStatus {
         try await gate()
         return IndexStatus(docCount: 1287, headIndexed: "32af73c",
-                           model: Self.mockEmbedder.model, dim: Self.mockEmbedder.dimension,
+                           model: mockEmbedder.model, dim: mockEmbedder.dimension,
                            keywordReady: true,
                            embedding: EmbeddingStatus(state: .running, done: 1240, total: 2727,
-                                                      provider: Self.mockEmbedder.provider,
-                                                      model: Self.mockEmbedder.model))
+                                                      provider: mockEmbedder.provider,
+                                                      model: mockEmbedder.model))
     }
 
     public func metrics() async throws -> Metrics {
@@ -256,7 +256,7 @@ public class MockSvodClient: SvodClient, @unchecked Sendable {
     // MARK: vaults / import
     // Vaults created via createVault during a preview/offline session — appended so
     // the switcher reflects them without a real engine.
-    private static var mockCreatedVaults: [Vault] = []
+    private var mockCreatedVaults: [Vault] = []
 
     public func vaults() async throws -> Vaults {
         try await gate()
@@ -265,7 +265,7 @@ public class MockSvodClient: SvodClient, @unchecked Sendable {
                   sync: SyncStatus(role: "authority", lastHead: "32af73c", conflicts: 1)),
             .init(id: "research", name: "Research", isDefault: false,
                   sync: SyncStatus(role: "follower", lastHead: "9f1c0d2", conflicts: 0)),
-        ] + Self.mockCreatedVaults)
+        ] + mockCreatedVaults)
     }
 
     @discardableResult
@@ -273,14 +273,14 @@ public class MockSvodClient: SvodClient, @unchecked Sendable {
         try await gate()
         let v = Vault(id: id, name: name ?? id, isDefault: false,
                       sync: SyncStatus(role: "solo", lastHead: nil, conflicts: 0))
-        Self.mockCreatedVaults.append(v)
+        mockCreatedVaults.append(v)
         return v
     }
 
     @discardableResult
     public func deleteVault(id: String, deleteFiles: Bool) async throws -> DeleteVaultResult {
         try await gate()
-        Self.mockCreatedVaults.removeAll { $0.id == id }
+        mockCreatedVaults.removeAll { $0.id == id }
         return DeleteVaultResult(id: id, path: nil, filesDeleted: deleteFiles)
     }
 
@@ -300,7 +300,7 @@ public class MockSvodClient: SvodClient, @unchecked Sendable {
     }
 
     // MARK: MCP agents — LLM access
-    private static var mockAgents: [Agent] = [
+    private var mockAgents: [Agent] = [
         Agent(agentId: "svod-foundry", name: "Svod Foundry", role: "WRITE",
               vaults: ["notes", "research"], tokenRef: "file:/tmp/foundry-token.secret"),
         Agent(agentId: "claude-desktop", name: "Claude Desktop", role: "WRITE",
@@ -309,7 +309,7 @@ public class MockSvodClient: SvodClient, @unchecked Sendable {
 
     public func agents() async throws -> AgentsInfo {
         try await gate()
-        return AgentsInfo(agents: Self.mockAgents, mcpPort: 7620, mcpUrl: "http://127.0.0.1:7620")
+        return AgentsInfo(agents: mockAgents, mcpPort: 7620, mcpUrl: "http://127.0.0.1:7620")
     }
 
     @discardableResult
@@ -317,32 +317,32 @@ public class MockSvodClient: SvodClient, @unchecked Sendable {
         try await gate()
         let a = Agent(agentId: request.agentId, name: request.name ?? request.agentId,
                       role: request.role, vaults: request.vaults, tokenRef: request.tokenRef, prompt: request.prompt)
-        Self.mockAgents.append(a)
+        mockAgents.append(a)
         return a
     }
 
     @discardableResult
     public func updateAgent(id: String, _ request: UpdateAgentRequest) async throws -> Agent {
         try await gate()
-        guard let i = Self.mockAgents.firstIndex(where: { $0.agentId == id }) else { throw SvodClientError.notFound }
-        var a = Self.mockAgents[i]
+        guard let i = mockAgents.firstIndex(where: { $0.agentId == id }) else { throw SvodClientError.notFound }
+        var a = mockAgents[i]
         if let v = request.name { a.name = v }
         if let v = request.role { a.role = v }
         if let v = request.vaults { a.vaults = v }
         if let v = request.tokenRef { a.tokenRef = v }
         if let v = request.prompt { a.prompt = v }
-        Self.mockAgents[i] = a
+        mockAgents[i] = a
         return a
     }
 
     public func deleteAgent(id: String) async throws {
         try await gate()
-        guard Self.mockAgents.contains(where: { $0.agentId == id }) else { throw SvodClientError.notFound }
-        Self.mockAgents.removeAll { $0.agentId == id }
+        guard mockAgents.contains(where: { $0.agentId == id }) else { throw SvodClientError.notFound }
+        mockAgents.removeAll { $0.agentId == id }
     }
 
     // MARK: memory / recall
-    private static var mockProposals: [MemoryProposal] = [
+    private var mockProposals: [MemoryProposal] = [
         MemoryProposal(id: "p-1", kind: "skill", title: "Extract a “svod-release” skill",
                        scope: "project", confidence: 0.82,
                        rationale: "The signed release + notarize + appcast-push flow recurred across 4 sessions with the same steps.",
@@ -372,7 +372,7 @@ public class MockSvodClient: SvodClient, @unchecked Sendable {
         return MemoryDashboard(sessionsCaptured: 12, sessionsDistilled: 9, notesWritten: 14,
                                capturedBytes: 2_360_000, distilledBytes: 87_400, compressionRatio: 27.0,
                                lastDistillAt: 1_752_460_000_000,
-                               openProposals: Self.mockProposals.filter { $0.isOpen }.count)
+                               openProposals: mockProposals.filter { $0.isOpen }.count)
     }
 
     public func memorySessions(distilled: Bool?, limit: Int?) async throws -> [MemorySession] {
@@ -387,16 +387,16 @@ public class MockSvodClient: SvodClient, @unchecked Sendable {
     public func memoryProposals(status: String?) async throws -> [MemoryProposal] {
         try await gate()
         if behavior == .empty { return [] }
-        guard let status, !status.isEmpty else { return Self.mockProposals }
-        return Self.mockProposals.filter { $0.status == status.lowercased() }
+        guard let status, !status.isEmpty else { return mockProposals }
+        return mockProposals.filter { $0.status == status.lowercased() }
     }
 
     @discardableResult
     public func resolveProposal(id: String, action: String, note: String?) async throws -> MemoryProposal {
         try await gate()
-        guard let i = Self.mockProposals.firstIndex(where: { $0.id == id }) else { throw SvodClientError.notFound }
-        Self.mockProposals[i].status = action.lowercased() == "accept" ? "accepted" : "rejected"
-        return Self.mockProposals[i]
+        guard let i = mockProposals.firstIndex(where: { $0.id == id }) else { throw SvodClientError.notFound }
+        mockProposals[i].status = action.lowercased() == "accept" ? "accepted" : "rejected"
+        return mockProposals[i]
     }
 
     @discardableResult
@@ -412,12 +412,12 @@ public class MockSvodClient: SvodClient, @unchecked Sendable {
     }
 
     // external sources — a tiny in-memory registry for previews
-    private static var mockSources: [ExternalSource] = [
+    private var mockSources: [ExternalSource] = [
         .init(id: "src-docs", path: "/Users/you/htdocs/boruna-ide/docs", into: "boruna/docs",
               followSymlinks: false, prune: false, lastSyncedAt: "2026-06-13T17:20:00Z"),
     ]
     public func listSources(vault: String?) async throws -> [ExternalSource] {
-        try await gate(); return Self.mockSources
+        try await gate(); return mockSources
     }
     @discardableResult
     public func registerSource(vault: String?, path: String, into: String?, followSymlinks: Bool, prune: Bool, autoSync: Bool, writeBack: Bool) async throws -> ExternalSource {
@@ -426,20 +426,20 @@ public class MockSvodClient: SvodClient, @unchecked Sendable {
                                into: into ?? (path as NSString).lastPathComponent,
                                followSymlinks: followSymlinks, prune: prune, lastSyncedAt: nil,
                                autoSync: autoSync, watching: autoSync, writeBack: writeBack)
-        Self.mockSources.append(s); return s
+        mockSources.append(s); return s
     }
     public func updateSource(id: String, vault: String?, autoSync: Bool?, followSymlinks: Bool?, prune: Bool?, writeBack: Bool?) async throws -> ExternalSource {
         try await gate()
-        guard let i = Self.mockSources.firstIndex(where: { $0.id == id }) else { throw SvodClientError.notFound }
-        var s = Self.mockSources[i]
+        guard let i = mockSources.firstIndex(where: { $0.id == id }) else { throw SvodClientError.notFound }
+        var s = mockSources[i]
         if let a = autoSync { s.autoSync = a; s.watching = a }
         if let f = followSymlinks { s.followSymlinks = f }
         if let p = prune { s.prune = p }
         if let w = writeBack { s.writeBack = w }
-        Self.mockSources[i] = s; return s
+        mockSources[i] = s; return s
     }
     public func removeSource(id: String, vault: String?) async throws {
-        try await gate(); Self.mockSources.removeAll { $0.id == id }
+        try await gate(); mockSources.removeAll { $0.id == id }
     }
     @discardableResult
     public func syncSource(id: String, vault: String?) async throws -> SourceSyncResult {
@@ -451,14 +451,14 @@ public class MockSvodClient: SvodClient, @unchecked Sendable {
     public func syncAllSources(vault: String?) async throws -> [SourceSyncResult] {
         try await gate()
         var out: [SourceSyncResult] = []
-        for s in Self.mockSources { out.append(try await syncSource(id: s.id, vault: vault)) }
+        for s in mockSources { out.append(try await syncSource(id: s.id, vault: vault)) }
         return out
     }
     @discardableResult
     public func resolveSourceConflict(id: String, path: String, strategy: String, vault: String?) async throws -> SourceSyncResult {
         try await gate()
-        if let i = Self.mockSources.firstIndex(where: { $0.id == id }) {
-            Self.mockSources[i].conflicts.removeAll { $0 == path }
+        if let i = mockSources.firstIndex(where: { $0.id == id }) {
+            mockSources[i].conflicts.removeAll { $0 == path }
         }
         return SourceSyncResult(id: id,
                                 created: [], updated: strategy == "takeExternal" ? [path] : [],
@@ -467,7 +467,7 @@ public class MockSvodClient: SvodClient, @unchecked Sendable {
     }
 
     // embeddings & indexing — in-memory embedder for previews
-    private static var mockEmbedder = EmbedderInfo(provider: "local-onnx",
+    private var mockEmbedder = EmbedderInfo(provider: "local-onnx",
                                                    model: "multilingual-e5-small", endpoint: nil, dimension: 384)
     @discardableResult
     public func setEmbedder(_ request: EmbedderRequest, vault: String?) async throws -> EmbedderInfo {
@@ -480,10 +480,10 @@ public class MockSvodClient: SvodClient, @unchecked Sendable {
             default: return 384
             }
         }()
-        Self.mockEmbedder = EmbedderInfo(provider: request.provider,
-                                         model: request.model ?? Self.mockEmbedder.model,
+        mockEmbedder = EmbedderInfo(provider: request.provider,
+                                         model: request.model ?? mockEmbedder.model,
                                          endpoint: request.endpoint, dimension: dim)
-        return Self.mockEmbedder
+        return mockEmbedder
     }
     public func testEmbedder(_ request: EmbedderRequest, vault: String?) async throws -> EmbedderTestResult {
         try await gate()
@@ -510,10 +510,10 @@ public class MockSvodClient: SvodClient, @unchecked Sendable {
     @discardableResult
     public func pauseIndex(vault: String?) async throws -> IndexStatus {
         try await gate()
-        return IndexStatus(docCount: 1287, headIndexed: "32af73c", model: Self.mockEmbedder.model,
-                           dim: Self.mockEmbedder.dimension, keywordReady: true,
+        return IndexStatus(docCount: 1287, headIndexed: "32af73c", model: mockEmbedder.model,
+                           dim: mockEmbedder.dimension, keywordReady: true,
                            embedding: EmbeddingStatus(state: .paused, done: 1240, total: 2727,
-                                                      provider: Self.mockEmbedder.provider, model: Self.mockEmbedder.model))
+                                                      provider: mockEmbedder.provider, model: mockEmbedder.model))
     }
     @discardableResult
     public func resumeIndex(vault: String?) async throws -> IndexStatus { try await gate(); return try await indexStatus() }
@@ -558,58 +558,58 @@ public class MockSvodClient: SvodClient, @unchecked Sendable {
     }
 
     // MARK: people — App API principals (contract 0.30.0), in-memory
-    private static var mockUsers: [UserInfo] = [
+    private var mockUsers: [UserInfo] = [
         UserInfo(userId: "maria", name: "Мария", email: "maria@example.com", admin: false,
                  grants: [VaultGrant(vault: "notes", role: "editor"), VaultGrant(vault: "research", role: "reader")],
                  keyRef: "file:/tmp/svod/secrets/user-maria.key"),
     ]
-    private static var mockKeyCounter = 0
+    private var mockKeyCounter = 0
 
     public func me() async throws -> Me {
         try await gate()
         return Me(userId: "local", name: "svod-ui", admin: true, local: true, grants: [])
     }
 
-    public func users() async throws -> UsersInfo { try await gate(); return UsersInfo(users: Self.mockUsers) }
+    public func users() async throws -> UsersInfo { try await gate(); return UsersInfo(users: mockUsers) }
 
     @discardableResult
     public func createUser(_ request: CreateUserRequest) async throws -> CreatedUser {
         try await gate()
-        if Self.mockUsers.contains(where: { $0.userId == request.userId }) {
+        if mockUsers.contains(where: { $0.userId == request.userId }) {
             throw SvodClientError.http(status: 409, message: "user id already exists: \(request.userId)")
         }
         let u = UserInfo(userId: request.userId, name: request.name, email: request.email, admin: request.admin,
                          grants: request.grants, keyRef: "file:/tmp/svod/secrets/user-\(request.userId).key")
-        Self.mockUsers.append(u)
-        Self.mockKeyCounter += 1
-        return CreatedUser(user: u, key: "svk_mock_\(request.userId)_\(Self.mockKeyCounter)")
+        mockUsers.append(u)
+        mockKeyCounter += 1
+        return CreatedUser(user: u, key: "svk_mock_\(request.userId)_\(mockKeyCounter)")
     }
 
     @discardableResult
     public func updateUser(id: String, _ request: UpdateUserRequest) async throws -> UserInfo {
         try await gate()
-        guard let i = Self.mockUsers.firstIndex(where: { $0.userId == id }) else { throw SvodClientError.notFound }
-        var u = Self.mockUsers[i]
+        guard let i = mockUsers.firstIndex(where: { $0.userId == id }) else { throw SvodClientError.notFound }
+        var u = mockUsers[i]
         if let n = request.name { u.name = n }
         if let e = request.email { u.email = e }
         if let a = request.admin { u.admin = a }
         if let g = request.grants { u.grants = g }
-        Self.mockUsers[i] = u
+        mockUsers[i] = u
         return u
     }
 
     public func deleteUser(id: String) async throws {
         try await gate()
-        guard Self.mockUsers.contains(where: { $0.userId == id }) else { throw SvodClientError.notFound }
-        Self.mockUsers.removeAll { $0.userId == id }
+        guard mockUsers.contains(where: { $0.userId == id }) else { throw SvodClientError.notFound }
+        mockUsers.removeAll { $0.userId == id }
     }
 
     @discardableResult
     public func rotateUserKey(id: String) async throws -> RotatedKey {
         try await gate()
-        guard Self.mockUsers.contains(where: { $0.userId == id }) else { throw SvodClientError.notFound }
-        Self.mockKeyCounter += 1
-        return RotatedKey(userId: id, key: "svk_mock_\(id)_\(Self.mockKeyCounter)")
+        guard mockUsers.contains(where: { $0.userId == id }) else { throw SvodClientError.notFound }
+        mockKeyCounter += 1
+        return RotatedKey(userId: id, key: "svk_mock_\(id)_\(mockKeyCounter)")
     }
 
     @discardableResult

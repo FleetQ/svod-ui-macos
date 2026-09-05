@@ -31,6 +31,17 @@ public final class MembersModel: ObservableObject {
 
     public var isAdmin: Bool { me?.admin == true }
 
+    /// "last seen 3 hours ago" / "never used".
+    public static func lastSeen(_ date: Date?, now: Date = Date()) -> String {
+        guard let date else { return "never used" }
+        let f = RelativeDateTimeFormatter(); f.unitsStyle = .abbreviated
+        return "last seen " + f.localizedString(for: date, relativeTo: now)
+    }
+
+    /// Engines before 0.31.0 send no lastUsedAt at all; then "never used" would be a lie for every
+    /// active key. Shown only once the engine has reported a value for someone.
+    public var reportsLastUsed: Bool { users.contains { $0.lastUsedAt != nil } || me?.lastUsedAt != nil }
+
     public func load() async {
         do {
             let who = try await client.me()
@@ -124,6 +135,7 @@ struct MembersSettingsView: View {
 
     var body: some View {
         MembersBody(model: MembersModel(client: app.client), engineLabel: engineLabel,
+                    engineReportsLastUsed: app.engine.apiVersionAtLeast(0, 31),
                     vaults: app.vault.vaults.filter { $0.engineId == app.vault.activeVault?.engineId })
             .id(app.vault.activeVault?.engineId ?? "local")
     }
@@ -133,6 +145,8 @@ struct MembersSettingsView: View {
 private struct MembersBody: View {
     @StateObject var model: MembersModel
     let engineLabel: String
+    /// Contract ≥ 0.31: "never used" is real information; on an older engine it would be a lie.
+    var engineReportsLastUsed: Bool = false
     let vaults: [Vault]
     @State private var editing: MemberDraft?
     @State private var pendingRevoke: UserInfo?
@@ -219,6 +233,13 @@ private struct MembersBody: View {
                             Text(u.name).font(.body)
                             Text(u.userId).font(Typography.caption).foregroundStyle(.secondary)
                             if u.admin { StatusPill("admin", tone: .accent) }
+                            // A key that has gone quiet is the one to revoke; "never" is a key that was handed over but not used.
+                            // On a 0.31 engine "never used" is real information; on an older one it would be a lie.
+                            if engineReportsLastUsed || model.reportsLastUsed {
+                                Text(MembersModel.lastSeen(u.lastUsedDate))
+                                    .font(Typography.caption2).foregroundStyle(.tertiary)
+                                    .help(u.lastUsedAt.map { "Key last used \($0)" } ?? "This key has never authenticated")
+                            }
                         }
                         if u.grants.isEmpty && !u.admin {
                             Text("no vaults").font(Typography.caption2).foregroundStyle(.tertiary)

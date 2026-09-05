@@ -90,6 +90,7 @@ struct ConnectionSettingsView: View {
     @ViewBuilder private var centralEngines: some View {
         Section("Central engines") {
             let unreachable = (app.client as? MultiEngineClient)?.unreachable ?? []
+            let insecure = (app.client as? MultiEngineClient)?.insecure ?? []
             if app.engines.profiles.isEmpty {
                 Text("None yet. Add a central engine to work in a company vault alongside your own.")
                     .font(Typography.callout).foregroundStyle(ThemeColor.textSecondary)
@@ -101,7 +102,10 @@ struct ConnectionSettingsView: View {
                         Text(p.baseURL.absoluteString).font(Typography.caption).foregroundStyle(ThemeColor.textTertiary)
                     }
                     Spacer()
-                    if unreachable.contains(p.id) {
+                    if insecure.contains(p.id) {
+                        StatusPill("insecure address", tone: .danger)
+                            .help("Saved with a plain http:// address to a remote host. This engine is not contacted (your key would travel in clear). Remove it and add it again over https://.")
+                    } else if unreachable.contains(p.id) {
                         StatusPill("unreachable", tone: .danger)
                     } else {
                         StatusPill("\(app.vault.vaults.filter { $0.engineId == p.id }.count) vaults", tone: .neutral)
