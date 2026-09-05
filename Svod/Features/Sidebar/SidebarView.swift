@@ -58,6 +58,9 @@ struct SidebarView: View {
             default: break
             }
         }
+        // The first load can run before the vault id is known (pins are then empty);
+        // re-read them the moment it resolves rather than waiting for the next tree reload.
+        .onChange(of: app.vault.activeVaultId) { _, _ in model.loadPins() }
     }
 
     private var isEmptyTree: Bool {
@@ -102,8 +105,10 @@ struct SidebarView: View {
                 treeFilterField
                 Divider().overlay(ThemeColor.separator)
                 ScrollView {
+                    // Walk the tree for pins once per render, not once per use.
+                    let pins = model.pinnedNotes
                     VStack(alignment: .leading, spacing: Spacing.lg) {
-                        if showsPinned { pinnedSection }
+                        if showsPinned(pins) { pinnedSection(pins) }
                         fileTreeSection
                     }
                     .padding(Spacing.sm)
@@ -383,15 +388,15 @@ struct SidebarView: View {
 
     // MARK: pinned notes — the few you reach for daily, one click away above the tree.
     // Hidden while a filter or theme narrows the tree: the tree IS the answer then.
-    private var showsPinned: Bool {
-        trimmedTreeFilter.isEmpty && app.themeFilter == nil && !model.pinnedNotes.isEmpty
+    private func showsPinned(_ pins: [String]) -> Bool {
+        trimmedTreeFilter.isEmpty && app.themeFilter == nil && !pins.isEmpty
     }
 
-    private var pinnedSection: some View {
+    private func pinnedSection(_ pins: [String]) -> some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
             SectionLabel("Pinned", systemImage: "pin")
                 .padding(.horizontal, Spacing.sm)
-            ForEach(model.pinnedNotes, id: \.self) { path in
+            ForEach(pins, id: \.self) { path in
                 ListRow(title: (path as NSString).lastPathComponent,
                         subtitle: (path as NSString).deletingLastPathComponent,
                         isSelected: app.selectedPath == path) {

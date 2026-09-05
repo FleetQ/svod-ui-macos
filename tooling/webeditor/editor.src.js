@@ -157,8 +157,10 @@ function renderCodePreview(text, ext) {
 
 // Rendered HTML lives in a sandboxed iframe. `allow-scripts` without `allow-same-origin`
 // gives the document an opaque origin: scripts run (decks, dashboards, prototypes need
-// them) but cannot reach this page, the Swift bridge, or file://. Content comes from
-// agents and synced sources — the same trust boundary as markdown.
+// them) but cannot reach this page's DOM or file://. NB: WebKit still exposes
+// window.webkit.messageHandlers to subframes, so the Swift side drops any bridge message
+// whose frame is not the main frame (WebEditorView.Coordinator). Content comes from agents
+// and synced sources — the same trust boundary as markdown.
 function renderHtmlPreview(el, text) {
   el.replaceChildren();
   const frame = document.createElement("iframe");

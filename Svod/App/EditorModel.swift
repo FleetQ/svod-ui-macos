@@ -40,6 +40,30 @@ public final class EditorModel: ObservableObject {
 
     public var currentRevision: String? { file?.revision }
 
+    /// True while preview is on because `load` turned it on for an .html file (as opposed
+    /// to the user choosing it). Lives here, not in the view: the editor view is torn down
+    /// on every center-pane switch, and the mode it set must be undone by whoever loads next.
+    private var autoPreviewed = false
+
+    /// The toolbar's Preview/Edit toggle. A mode the user chose is theirs to keep.
+    public func togglePreview() {
+        previewMode.toggle()
+        autoPreviewed = false
+    }
+
+    /// An .html file is a page, not source: open it rendered. Undo that for the next
+    /// non-html file only when it was this rule that turned preview on.
+    private func applyAutoPreview(path: String) {
+        let isHTML = ["html", "htm"].contains((path as NSString).pathExtension.lowercased())
+        if isHTML, !previewMode {
+            previewMode = true
+            autoPreviewed = true
+        } else if !isHTML, autoPreviewed {
+            previewMode = false
+            autoPreviewed = false
+        }
+    }
+
     private var suppressAutosave = false
     private var autosaveTask: Task<Void, Never>?
 
@@ -66,6 +90,7 @@ public final class EditorModel: ObservableObject {
             self.draft = f.content
             suppressAutosave = false
             self.dirty = false
+            applyAutoPreview(path: path)
             // Sidecar (vault note list + this note's link resolution) is non-essential for
             // display and can take seconds on link-heavy notes — load it off the critical
             // path so the note opens immediately instead of blocking on /file/links.
@@ -84,7 +109,7 @@ public final class EditorModel: ObservableObject {
     private func loadSidecar(path: String) async {
         if let root = try? await client.tree() {
             noteNames = Self.noteNames(in: root)
-            notePaths = Self.notePaths(in: root)
+            notePaths = root.filePaths
         }
         if let links = try? await client.fileLinks(path: path) {
             guard app?.selectedPath == path else { return }   // superseded by a newer selection
@@ -162,16 +187,6 @@ public final class EditorModel: ObservableObject {
         }
         walk(node)
         return out.sorted()
-    }
-
-    private static func notePaths(in node: TreeNode) -> Set<String> {
-        var out = Set<String>()
-        func walk(_ n: TreeNode) {
-            if n.type == .file { out.insert(n.path) }
-            n.children?.forEach(walk)
-        }
-        walk(node)
-        return out
     }
 
     public func save() async {

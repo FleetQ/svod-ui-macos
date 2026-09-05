@@ -61,6 +61,17 @@ final class SidebarPinsTests: XCTestCase {
         XCTAssertEqual(m.pinned, ["vault/a.md"])
     }
 
+    func testNothingIsReadOrWrittenWhileTheVaultIsUnknown() {
+        // On launch the sidebar loads before vault.load() has resolved the active id.
+        let app = AppModel(client: MockSvodClient())
+        XCTAssertNil(app.vault.activeVaultId)
+        let m = model()
+        m.app = app
+        m.togglePin("vault/a.md")
+        XCTAssertTrue(m.pinned.isEmpty, "a pin made under a placeholder key would be stranded")
+        XCTAssertTrue(defaults.dictionaryRepresentation().keys.filter { $0.hasPrefix("svod.sidebar.pinned") }.isEmpty)
+    }
+
     func testOnlyPinsWhoseNoteExistsAreShown() {
         let m = model()
         m.togglePin("vault/gone.md")

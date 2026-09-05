@@ -35,7 +35,8 @@ public static func canRevert(_ event: SvodEvent) -> Bool      // isReviewable &&
 
 - `trackPending` dedupes by commit (its own set, independent of the feed's filter settings, so a hidden feed type still lands in review), inserts at 0, trims to cap, persists.
 - Persistence: `JSONEncoder` of `[SvodEvent]` (already `Codable`) under `svod.activity.pending`; loaded in `init`; decode failure ⇒ empty list.
-- `revert` steps, in order, each mapped to an outcome:
+- `canRevert` is an allowlist: tool ∈ {nil, `write`, `edit`}.
+- `revert` captures the active vault id first and re-checks it after every await (`.failed` if it changed — nothing written). Steps, in order, each mapped to an outcome:
   1. `guard canRevert` else `.failed("not revertible")`.
   2. `history(path, max: 1)` — if `first?.commit != commit` ⇒ `.changedSince` (list row keeps the item, shows the hint).
   3. `revision(path, "\(commit)~1")`: `badRequest`/`notFound` ⇒ parent has no copy of the file ⇒ agent created it ⇒ `readFile` then `deleteFile(path, expectedRevision:)` ⇒ `.trashed`, and `app.refreshActiveVault()`.
@@ -44,7 +45,15 @@ public static func canRevert(_ event: SvodEvent) -> Bool      // isReviewable &&
 
 ### `HistoryModel` / `HistoryView`
 
-- `@Published var focusCommit: String?` on the model. `HistoryView`'s load task selects `commits.first { $0.commit == focusCommit } ?? commits.first`, then clears `focusCommit`. One-shot; no other behavior changes.
+- `@Published var focusCommit: String?` and `focusMissing: String?` on the model. After a load, `selectAfterLoad()` selects the requested commit when present; otherwise it selects the newest and sets `focusMissing`, which the diff toolbar shows as a caption ("isn't in the last 100 revisions") instead of silently substituting. When the jump targets the note whose timeline is already on screen (no task-id change), `HistoryView.onChange(of: model.focusCommit)` calls `applyFocus()`.
+
+### `EditorModel`
+
+- `applyAutoPreview(path:)` runs at the end of a successful `load`: an `.html` file turns preview on and remembers it did (`autoPreviewed`); the next non-html load turns it back off only in that case. `togglePreview()` (the toolbar) clears the flag so a mode the user chose survives. Lives in the model because the editor view is torn down on every center-pane switch.
+
+### `WebEditorView.Coordinator`
+
+- `userContentController(_:didReceive:)` drops any message with `frameInfo.isMainFrame == false`. The bridge handler is injected into every frame, sandbox or not.
 
 ### `InspectorView`
 

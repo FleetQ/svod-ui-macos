@@ -38,9 +38,13 @@ struct HistoryView: View {
         .task(id: "\(app.selectedPath ?? "")|\(app.reloadEpoch)") {
             guard let path = app.selectedPath else { return }
             await model.load(path: path)
-            let target = model.commits.first { $0.commit == model.focusCommit } ?? model.commits.first
-            model.focusCommit = nil
-            if let target { await model.select(commit: target) }
+            await model.selectAfterLoad()
+        }
+        // A jump to a commit of the note whose timeline is already on screen changes
+        // neither task-id component, so it is applied here instead.
+        .onChange(of: model.focusCommit) { _, requested in
+            guard requested != nil, model.path == app.selectedPath else { return }
+            Task { await model.applyFocus() }
         }
         .alert("Restore this version?", isPresented: restoreAlertBinding, presenting: model.pendingRestore) { commit in
             Button("Cancel", role: .cancel) { model.pendingRestore = nil }
@@ -84,6 +88,12 @@ struct HistoryView: View {
                 Text(commit.message)
                     .font(Typography.callout)
                     .foregroundStyle(ThemeColor.textPrimary)
+                    .lineLimit(1)
+            }
+            if let missing = model.focusMissing {
+                Text("Commit \(missing.prefix(8)) isn’t in the last 100 revisions — showing the newest.")
+                    .font(Typography.caption)
+                    .foregroundStyle(ThemeColor.warning)
                     .lineLimit(1)
             }
             Spacer()

@@ -99,13 +99,17 @@ final class ActivityReviewTests: XCTestCase {
         XCTAssertEqual(m.pending.first?.data.commit, "c0")
     }
 
-    func testDeleteAndMoveAreReviewableButNotRevertible() {
+    func testOnlySinglePathContentWritesAreRevertible() {
         XCTAssertTrue(ActivityModel.canRevert(agentWrite("c1", tool: "write")))
         XCTAssertTrue(ActivityModel.canRevert(agentWrite("c1", tool: "edit")))
         XCTAssertTrue(ActivityModel.canRevert(agentWrite("c1", tool: nil)))
-        XCTAssertTrue(ActivityModel.isReviewable(agentWrite("c1", tool: "delete")))
-        XCTAssertFalse(ActivityModel.canRevert(agentWrite("c1", tool: "delete")))
-        XCTAssertFalse(ActivityModel.canRevert(agentWrite("c1", tool: "move")))
+        // Reviewable, but a single write-back cannot undo them: delete already trashed the
+        // note; move/promote carry the DESTINATION path, whose parent copy is absent, so a
+        // revert would trash the moved note; remember may write two files in one commit.
+        for tool in ["delete", "move", "promote", "remember"] {
+            XCTAssertTrue(ActivityModel.isReviewable(agentWrite("c1", tool: tool)), tool)
+            XCTAssertFalse(ActivityModel.canRevert(agentWrite("c1", tool: tool)), tool)
+        }
     }
 
     // MARK: revert

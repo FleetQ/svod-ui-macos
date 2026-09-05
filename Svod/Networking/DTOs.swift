@@ -96,6 +96,16 @@ public struct TreeNode: Codable, Hashable, Sendable, Identifiable {
     public var type: Kind
     public var children: [TreeNode]?
     public var id: String { path }
+    /// Every file path under this node, recursively.
+    public var filePaths: Set<String> {
+        var out = Set<String>()
+        func walk(_ n: TreeNode) {
+            if n.type == .file { out.insert(n.path) }
+            n.children?.forEach(walk)
+        }
+        walk(self)
+        return out
+    }
     public init(name: String, path: String, type: Kind, children: [TreeNode]? = nil) {
         self.name = name; self.path = path; self.type = type; self.children = children
     }

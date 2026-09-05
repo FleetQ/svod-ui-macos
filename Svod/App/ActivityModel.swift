@@ -83,11 +83,13 @@ public final class ActivityModel: ObservableObject {
         return event.data.commit != nil && event.data.path != nil
     }
 
-    /// Revert restores the pre-commit content of ONE path. A delete already left the
-    /// note in `.trash/`, and a move touches two paths — neither is a single write back.
+    /// Revert restores the pre-commit content of ONE path, so only single-path content
+    /// writes qualify. `delete` already left the note in `.trash/`; `move` and `promote`
+    /// touch two paths (the event carries the destination, whose parent copy is absent —
+    /// reverting would trash the moved note); `remember` may write two files in one commit.
     public static func canRevert(_ event: SvodEvent) -> Bool {
         guard isReviewable(event) else { return false }
-        return !["delete", "move"].contains(event.data.tool ?? "")
+        return [nil, "write", "edit"].contains(event.data.tool)
     }
 
     /// Independent of the feed's type filters: hiding agent.activity from the feed must
@@ -130,23 +132,30 @@ public final class ActivityModel: ObservableObject {
         guard Self.canRevert(event), let path = event.data.path, let commit = event.data.commit else {
             return .failed("This change can't be reverted from here.")
         }
+        // Every call below resolves the vault at call time, and a vault switch can land on
+        // any suspension point. Re-check after each await so a switch mid-revert aborts
+        // before anything is written, instead of writing vault A's content into vault B.
+        let vault = app?.vault.activeVaultId
+        func sameVault() -> Bool { app?.vault.activeVaultId == vault }
+        let switched = RevertOutcome.failed("The active vault changed during the revert. Nothing was written.")
         do {
             // MCP events carry no vault tag and this runs against the active vault; a path
             // from another vault either 404s here or has a different head, so this check
-            // also fails closed on a vault switch.
+            // also fails closed on a wrong-vault item.
             let head = try await client.history(path: path, max: 1).first?.commit
             guard head == commit else { return .changedSince }
+            guard sameVault() else { return switched }
 
             let parent: FileContent?
             do {
                 parent = try await client.revision(path: path, revision: "\(commit)~1")
-            } catch SvodClientError.badRequest {
-                parent = nil
-            } catch SvodClientError.notFound {
+            } catch SvodClientError.badRequest, SvodClientError.notFound {
                 parent = nil
             }
+            guard sameVault() else { return switched }
 
             let current = try await client.readFile(path: path)
+            guard sameVault() else { return switched }
             if let parent {
                 _ = try await client.writeFile(path: path, content: parent.content,
                                                expectedRevision: current.revision)

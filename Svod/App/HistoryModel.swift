@@ -28,9 +28,13 @@ public final class HistoryModel: ObservableObject {
     /// Drives the restore confirmation alert.
     @Published var pendingRestore: CommitInfo?
     @Published var isRestoring = false
-    /// One-shot: the commit the pane should select on its next load instead of the newest
-    /// (set by the review inbox before jumping here). Cleared once consumed.
+    /// One-shot: the commit the pane should select instead of the newest (set by the
+    /// review inbox before jumping here). Consumed by `selectAfterLoad` / `applyFocus`.
     @Published public var focusCommit: String?
+    /// A requested focus commit that the loaded timeline does not contain (older than the
+    /// last 100 revisions, or from another vault). The pane says so instead of silently
+    /// showing a different diff. Cleared on the next manual selection.
+    @Published public var focusMissing: String?
 
     public init(client: SvodClient) { self.client = client }
 
@@ -78,7 +82,31 @@ public final class HistoryModel: ObservableObject {
     func select(commit: CommitInfo) async {
         guard let path else { return }
         selectedCommit = commit.commit
+        focusMissing = nil
         await loadDiff(path: path, from: "\(commit.commit)~1", to: commit.commit)
+    }
+
+    /// After `load`: the requested focus commit when present, else the newest. A focus
+    /// commit that isn't in the timeline is reported through `focusMissing`, not swapped
+    /// for the newest one in silence.
+    func selectAfterLoad() async {
+        let requested = focusCommit
+        focusCommit = nil
+        if let requested, let target = commits.first(where: { $0.commit == requested }) {
+            await select(commit: target)
+            return
+        }
+        if let first = commits.first { await select(commit: first) }
+        focusMissing = requested
+    }
+
+    /// The inbox set `focusCommit` while this very note's timeline is already showing, so
+    /// no load will consume it. Select it if it is here; otherwise leave it for a load.
+    func applyFocus() async {
+        guard let requested = focusCommit,
+              let target = commits.first(where: { $0.commit == requested }) else { return }
+        focusCommit = nil
+        await select(commit: target)
     }
 
     public func restore(path: String, to revision: String) async {

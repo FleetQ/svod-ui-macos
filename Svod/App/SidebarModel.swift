@@ -87,21 +87,29 @@ public final class SidebarModel: ObservableObject {
 
     // MARK: - Pinned notes
 
-    private var pinsKey: String {
-        "svod.sidebar.pinned.\(app?.vault.activeVaultId ?? "default")"
+    /// Nil until the active vault is known. On launch the first sidebar load runs before
+    /// `vault.load()` has resolved the id; reading or writing pins under a placeholder key
+    /// then would strand them. Without an app (previews, tests) there is one implicit vault.
+    private var pinsKey: String? {
+        guard let app else { return "svod.sidebar.pinned.default" }
+        guard let id = app.vault.activeVaultId else { return nil }
+        return "svod.sidebar.pinned.\(id)"
     }
 
-    /// Re-read the active vault's pins. `load()` calls this, and `load()` already runs
-    /// on every vault switch (reloadEpoch), so pins follow the vault.
+    /// Re-read the active vault's pins. Runs from `load()` (which follows every vault
+    /// switch via reloadEpoch) and from the view when the active vault id changes.
     public func loadPins() {
-        pinned = defaults.stringArray(forKey: pinsKey) ?? []
+        guard let key = pinsKey else { pinned = []; return }
+        pinned = defaults.stringArray(forKey: key) ?? []
     }
 
     public func isPinned(_ path: String) -> Bool { pinned.contains(path) }
 
+    /// No-op while the vault is unknown — see `pinsKey`.
     public func togglePin(_ path: String) {
+        guard let key = pinsKey else { return }
         if let i = pinned.firstIndex(of: path) { pinned.remove(at: i) } else { pinned.append(path) }
-        defaults.set(pinned, forKey: pinsKey)
+        defaults.set(pinned, forKey: key)
     }
 
     /// Pins whose note exists in the current tree, in pin order. A pin for a note that
@@ -109,11 +117,7 @@ public final class SidebarModel: ObservableObject {
     /// note does. Empty until the tree has loaded.
     public var pinnedNotes: [String] {
         guard !pinned.isEmpty, let tree else { return [] }
-        var files = Set<String>()
-        func walk(_ n: TreeNode) {
-            if n.type == .file { files.insert(n.path) } else { (n.children ?? []).forEach(walk) }
-        }
-        walk(tree)
+        let files = tree.filePaths
         return pinned.filter { files.contains($0) }
     }
 }

@@ -81,6 +81,11 @@ struct WebEditorView: NSViewRepresentable {
         }
 
         func userContentController(_ uc: WKUserContentController, didReceive message: WKScriptMessage) {
+            // The handler is injected into EVERY frame, and the HTML sandbox attribute does
+            // not gate it — a script inside the rendered .html preview iframe can post here
+            // (verified with a standalone WKWebView harness). Only the editor page itself
+            // may drive the bridge; anything from a subframe is dropped unread.
+            guard message.frameInfo.isMainFrame else { return }
             guard let body = message.body as? [String: Any], let type = body["type"] as? String else { return }
             switch type {
             case "ready":

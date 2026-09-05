@@ -29,11 +29,15 @@ struct ReviewCard: View {
                                   note: notes[event.id],
                                   busy: reverting == event.id,
                                   canRevert: ActivityModel.canRevert(event),
+                                  showVaultTag: app.vault.hasMultipleVaults,
                                   onJump: { jump(event) },
                                   onReviewed: { dismiss(event) },
                                   onRevert: { pendingRevert = event })
                     }
-                    Text("Agent commits since the app was last connected.")
+                    // Honest about coverage: events arrive only over the live socket, and
+                    // the engine keeps no replay — a commit made while the app was closed
+                    // or reconnecting is not here.
+                    Text("Agent commits made while the app was connected.")
                         .font(Typography.caption2)
                         .foregroundStyle(ThemeColor.textTertiary)
                         .padding(.horizontal, Spacing.xs)
@@ -43,7 +47,7 @@ struct ReviewCard: View {
                 Button("Cancel", role: .cancel) { pendingRevert = nil }
                 Button("Revert", role: .destructive) { Task { await revert(event) } }
             } message: { event in
-                Text("Writes the content from before \(event.data.displayActor)’s change to “\(fileName(event))” back as a new commit. Nothing is lost — the agent’s version stays in history. A note the agent created is moved to the trash.")
+                Text("Writes the content from before \(event.data.displayActor)’s change to “\(event.data.fileName)” back as a new commit. Nothing is lost — the agent’s version stays in history. A note the agent created is moved to the trash.")
             }
         }
     }
@@ -71,14 +75,12 @@ struct ReviewCard: View {
         Binding(get: { pendingRevert != nil }, set: { if !$0 { pendingRevert = nil } })
     }
 
-    private func fileName(_ event: SvodEvent) -> String {
-        (event.data.path as NSString?)?.lastPathComponent ?? event.data.path ?? "—"
-    }
-
     /// Open the note with History focused on this very commit, not the newest one.
+    /// App-API events carry their vault; MCP events don't, so those open in the active
+    /// vault (the engine tagging MCP events is the follow-up that closes this).
     private func jump(_ event: SvodEvent) {
         guard let path = event.data.path else { return }
-        app.open(path: path)
+        app.open(path: path, vault: event.data.vault)
         app.history.focusCommit = event.data.commit
         app.setCenter(.history)
     }
@@ -107,61 +109,24 @@ struct ReviewCard: View {
 
 // MARK: - Row
 
+/// The shared agent row plus the inbox's actions menu and an outcome caption.
 private struct ReviewRow: View {
     let event: SvodEvent
     let note: String?
     let busy: Bool
     let canRevert: Bool
+    let showVaultTag: Bool
     let onJump: () -> Void
     let onReviewed: () -> Void
     let onRevert: () -> Void
 
-    @State private var hovering = false
-
-    private var actor: String { event.data.displayActor }
-    private var fileName: String {
-        (event.data.path as NSString?)?.lastPathComponent ?? event.data.path ?? "—"
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.xxs) {
-            HStack(alignment: .top, spacing: Spacing.sm) {
-                Button(action: onJump) {
-                    HStack(alignment: .top, spacing: Spacing.sm) {
-                        Circle()
-                            .fill(ThemeColor.agentColor(for: actor))
-                            .frame(width: 7, height: 7)
-                            .padding(.top, 5)
-                        VStack(alignment: .leading, spacing: 1) {
-                            HStack(spacing: Spacing.xs) {
-                                Text(actor)
-                                    .font(Typography.callout.weight(.medium))
-                                    .foregroundStyle(ThemeColor.agentColor(for: actor))
-                                Text(event.data.verb)
-                                    .font(Typography.callout)
-                                    .foregroundStyle(ThemeColor.textSecondary)
-                            }
-                            Text(fileName)
-                                .font(Typography.caption)
-                                .foregroundStyle(ThemeColor.textTertiary)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                        }
-                        Spacer(minLength: Spacing.xs)
-                        Text(RelativeTime.string(from: event.date))
-                            .font(Typography.caption)
-                            .foregroundStyle(ThemeColor.textTertiary)
-                            .monospacedDigit()
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help("Open the diff in History")
-                .accessibilityLabel("\(actor) \(event.data.verb) \(fileName), \(RelativeTime.string(from: event.date))")
-                .accessibilityHint("Opens the diff for this change")
-
+            HStack(alignment: .top, spacing: 0) {
+                ActivityRow(event: event, onJump: onJump, showVaultTag: showVaultTag)
                 if busy {
                     ProgressView().controlSize(.mini)
+                        .padding(.top, Spacing.xs)
                 } else {
                     Menu {
                         Button { onReviewed() } label: { Label("Mark reviewed", systemImage: "checkmark") }
@@ -179,21 +144,17 @@ private struct ReviewRow: View {
                     .menuStyle(.borderlessButton)
                     .menuIndicator(.hidden)
                     .fixedSize()
-                    .accessibilityLabel("Actions for \(fileName)")
+                    .padding(.top, Spacing.xs)
+                    .accessibilityLabel("Actions for \(event.data.fileName)")
                 }
             }
             if let note {
                 Text(note)
                     .font(Typography.caption)
                     .foregroundStyle(ThemeColor.warning)
-                    .padding(.leading, Spacing.md + Spacing.xs)
+                    .padding(.leading, Spacing.lg + Spacing.xs)
             }
         }
-        .padding(.horizontal, Spacing.xs)
-        .padding(.vertical, Spacing.xs)
-        .background(hovering ? ThemeColor.surfaceHover : .clear,
-                    in: RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
-        .onHover { hovering = $0 }
     }
 }
 

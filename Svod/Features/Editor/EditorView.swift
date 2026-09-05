@@ -21,7 +21,6 @@ struct EditorView: View {
         .task(id: app.selectedPath) {
             guard let path = app.selectedPath else { return }
             await model.load(path: path)
-            autoPreview(for: path)
         }
         // Self-heal an initial editor load that raced the engine connection. Only when
         // nothing loaded yet AND there's no unsaved draft — a reconnect must never
@@ -29,22 +28,6 @@ struct EditorView: View {
         .onChange(of: app.reloadEpoch) { _, _ in
             guard let path = app.selectedPath, model.file == nil, !model.dirty else { return }
             Task { await model.load(path: path) }
-        }
-    }
-
-    /// An `.html` file is a page, not source: show it rendered on open. Only undo that
-    /// for the next non-html file when it was this code that turned preview on — a
-    /// mode the user chose is left alone.
-    @State private var autoPreviewed = false
-
-    private func autoPreview(for path: String) {
-        let isHTML = ["html", "htm"].contains((path as NSString).pathExtension.lowercased())
-        if isHTML, !model.previewMode {
-            model.previewMode = true
-            autoPreviewed = true
-        } else if !isHTML, autoPreviewed {
-            model.previewMode = false
-            autoPreviewed = false
         }
     }
 
@@ -157,7 +140,7 @@ private struct EditorToolbar: View {
             ToolbarIconButton(model.previewMode ? "pencil" : "eye",
                               help: model.previewMode ? "Edit (⌘⇧P)" : "Preview (⌘⇧P)",
                               isActive: model.previewMode) {
-                withAnimation(Motion.standard) { model.previewMode.toggle() }
+                withAnimation(Motion.standard) { model.togglePreview() }
             }
             .keyboardShortcut("p", modifiers: [.command, .shift])
             ToolbarIconButton("square.and.arrow.down", help: "Save (⌘S)") {
