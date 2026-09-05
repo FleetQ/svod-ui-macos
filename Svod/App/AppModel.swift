@@ -25,6 +25,9 @@ public final class AppModel: ObservableObject {
     /// All UI preferences (persisted). Read by feature models via their `app` ref.
     public let settings = SettingsStore()
 
+    /// Central engines the app talks to besides the local one (contract 0.30.0, ADR-0019).
+    public let engines: EngineProfileStore
+
     // Cross-feature state
     @Published public var selectedPath: String?
 
@@ -77,8 +80,16 @@ public final class AppModel: ObservableObject {
     public let vault: VaultModel
     public let inspector: InspectorModel
 
-    public init(client: SvodClient) {
+    /// The production composition: the local engine plus every saved central-engine profile
+    /// behind one router client, so a vault switch can land on either.
+    public static func live() -> AppModel {
+        let store = EngineProfileStore()
+        return AppModel(client: MultiEngineClient(local: LiveSvodClient(), profiles: store), engines: store)
+    }
+
+    public init(client: SvodClient, engines: EngineProfileStore? = nil) {
         self.client = client
+        self.engines = engines ?? EngineProfileStore()
         self.editor = EditorModel(client: client)
         self.search = SearchModel(client: client)
         self.graph = GraphModel(client: client)
@@ -112,6 +123,9 @@ public final class AppModel: ObservableObject {
             .store(in: &cancellables)
         // Forward settings changes so the app shell (theme, endpoint) reacts.
         settings.objectWillChange
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &cancellables)
+        self.engines.objectWillChange
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
 
@@ -159,8 +173,21 @@ public final class AppModel: ObservableObject {
     /// sub-models share one client instance, so updating its baseURL redirects
     /// every call; the engine then re-opens the WebSocket against the new URL.
     public func applyEndpoint() {
-        (client as? LiveSvodClient)?.updateBaseURL(settings.baseURL)
+        updateLocalEndpoint()
         engine.reconnectNow()
+    }
+
+    private func updateLocalEndpoint() {
+        if let m = client as? MultiEngineClient { m.updateLocalBaseURL(settings.baseURL) }
+        else { (client as? LiveSvodClient)?.updateBaseURL(settings.baseURL) }
+    }
+
+    /// Central-engine profiles changed (Settings → Connection): rebuild the router's remote
+    /// set, re-open the merged event stream and refresh the vault list.
+    public func reloadEngines() {
+        (client as? MultiEngineClient)?.configure(store: engines)
+        engine.reconnectNow()
+        reloadVaults()
     }
 
     // MARK: shell actions
@@ -178,9 +205,7 @@ public final class AppModel: ObservableObject {
     // MARK: lifecycle entry point used by SvodApp on launch
     public func bootstrap() {
         // Honor a non-default endpoint before the first connection attempt.
-        if settings.baseURL != client.baseURL {
-            (client as? LiveSvodClient)?.updateBaseURL(settings.baseURL)
-        }
+        if settings.baseURL != client.baseURL { updateLocalEndpoint() }
         engine.startConnecting()
         // Load the vault list (degrades to a single implicit vault on older engines),
         // THEN reopen the last note. Selecting the path first raced this: the editor's

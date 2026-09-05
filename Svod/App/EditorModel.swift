@@ -189,8 +189,12 @@ public final class EditorModel: ObservableObject {
         return out.sorted()
     }
 
+    /// The engine said we may only read the active vault (contract 0.30.0 `role: reader`).
+    public var isReadOnly: Bool { app?.vault.isActiveReadOnly == true }
+
     public func save() async {
         guard let path = file?.path ?? app?.selectedPath else { return }
+        if isReadOnly { errorMessage = "You have read-only access to this vault."; return }
         isSaving = true; errorMessage = nil
         defer { isSaving = false }
         do {

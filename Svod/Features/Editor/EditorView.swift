@@ -51,6 +51,14 @@ struct EditorView: View {
     private var editor: some View {
         VStack(spacing: 0) {
             EditorToolbar(model: model)
+            if model.isReadOnly {
+                Label("Read-only — you can browse this vault but not change it.", systemImage: "lock")
+                    .font(Typography.caption).foregroundStyle(ThemeColor.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, Spacing.md).padding(.vertical, Spacing.xs)
+                    .background(ThemeColor.surfaceRaised)
+                    .accessibilityLabel("Read-only vault")
+            }
             ScrollView {
                 VStack(spacing: Spacing.lg) {
                     MemoryBadgesBar(frontmatter: split.frontmatter) { handleOpenLink($0) }
@@ -143,9 +151,10 @@ private struct EditorToolbar: View {
                 withAnimation(Motion.standard) { model.togglePreview() }
             }
             .keyboardShortcut("p", modifiers: [.command, .shift])
-            ToolbarIconButton("square.and.arrow.down", help: "Save (⌘S)") {
+            ToolbarIconButton("square.and.arrow.down", help: model.isReadOnly ? "Read-only vault" : "Save (⌘S)") {
                 Task { await model.save() }
             }
+            .disabled(model.isReadOnly)
         }
     }
 

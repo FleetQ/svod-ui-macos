@@ -29,6 +29,10 @@ struct SyncBackupSettingsView: View {
     // Two-way multi-machine sync (contract 0.12.0). Reuses the backup remote as the bus.
     @State private var syncOn = false
     @State private var syncInterval = 0        // minutes; 0 = engine default (3)
+    // Central engine (contract 0.30.0): the GitHub device flow is local-only, so a vault on a
+    // remote engine takes a repository + token typed once; the token is stored on the ENGINE host.
+    @State private var remoteRepoURL = ""
+    @State private var remoteToken = ""
 
     /// Last successful backup, parsed from the engine's ISO-8601 marker.
     private var lastBackupText: String? {
@@ -117,6 +121,8 @@ struct SyncBackupSettingsView: View {
                 if configUnavailable {
                     Label("Backup needs a newer engine (v1.0+).", systemImage: "lock")
                         .font(Typography.callout).foregroundStyle(ThemeColor.textSecondary)
+                } else if app.vault.activeVault?.isRemote == true {
+                    remoteTokenFlow
                 } else {
                     githubFlow
                 }
@@ -242,6 +248,59 @@ struct SyncBackupSettingsView: View {
         .task {
             await app.engine.loadMeta()
             await loadConfig()
+        }
+    }
+
+    // MARK: central engine — repository + token, stored on the engine host (contract 0.30.0)
+    @ViewBuilder private var remoteTokenFlow: some View {
+        if let remote = config?.backupRemote, !remote.isEmpty {
+            Label(config?.syncEnabled == true ? "Syncing to \(friendly(remote))" : "Backing up to \(friendly(remote))",
+                  systemImage: "checkmark.seal.fill")
+                .font(Typography.callout).foregroundStyle(ThemeColor.sync)
+            Text(offsiteFreshnessText ?? "Not backed up yet — press “Back up now” or turn on automatic backup below.")
+                .font(Typography.caption).foregroundStyle(ThemeColor.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        if app.engine.apiVersionAtLeast(0, 30) {
+            Text("This vault lives on a central engine. Paste the company repository and a token; the engine keeps the token on its own host and this Mac never stores it.")
+                .font(Typography.caption).foregroundStyle(ThemeColor.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+            TextField("Repository", text: $remoteRepoURL, prompt: Text("https://github.com/<org>/<repo>.git"))
+                .textFieldStyle(.roundedBorder).font(Typography.code)
+            SecureField("Token", text: $remoteToken, prompt: Text("fine-grained PAT with Contents read/write"))
+                .textFieldStyle(.roundedBorder)
+            Button {
+                Task { await connectRemoteWithToken() }
+            } label: {
+                Label((config?.backupRemote ?? "").isEmpty ? "Connect with token" : "Change repository / token", systemImage: "key.horizontal")
+            }
+            .buttonStyle(SvodButtonStyle(.primary))
+            .disabled(busy || remoteToken.isEmpty || Self.authedRemote(repo: remoteRepoURL, token: remoteToken) == nil)
+        } else {
+            Label("Connecting a repository to a vault on a central engine needs engine contract 0.30.0+.", systemImage: "lock")
+                .font(Typography.callout).foregroundStyle(ThemeColor.textSecondary)
+        }
+    }
+
+    /// `https://github.com/org/repo.git` + token → `https://x-access-token:<token>@github.com/org/repo.git`; nil when the URL is unusable.
+    static func authedRemote(repo: String, token: String) -> String? {
+        let t = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty, var c = URLComponents(string: repo.trimmingCharacters(in: .whitespaces)),
+              c.scheme?.lowercased() == "https", let host = c.host, !host.isEmpty, c.path.count > 1 else { return nil }
+        c.user = "x-access-token"; c.password = t
+        return c.string
+    }
+
+    private func connectRemoteWithToken() async {
+        guard let authed = Self.authedRemote(repo: remoteRepoURL, token: remoteToken) else { return }
+        let bare = VaultKey.parse(vaultID).vaultId ?? vaultID ?? "default"
+        await run("Storing the token on the engine") {
+            let ref = try await client.createSecret(name: "backup-\(bare)", value: authed).ref
+            config = try await client.setBackup(vault: vaultID, remote: ref, enabled: true)
+            backupRemote = ref
+            backupEnabled = true
+            remoteToken = ""
+            return "Repository connected. Use “Back up now” to push the first snapshot."
         }
     }
 

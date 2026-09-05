@@ -30,7 +30,7 @@ struct SettingsScene: View {
     @State private var section: Section = .connection
 
     enum Section: String, CaseIterable, Identifiable {
-        case connection, engine, syncBackup, sources, indexing, llmAccess, memory, updates, appearance, editor, search, activity, graph, about
+        case connection, engine, syncBackup, sources, indexing, llmAccess, members, memory, updates, appearance, editor, search, activity, graph, about
         var id: String { rawValue }
         var title: String {
             switch self {
@@ -40,6 +40,7 @@ struct SettingsScene: View {
             case .sources:    "Sources"
             case .indexing:   "Indexing"
             case .llmAccess:  "LLM Access"
+            case .members:    "Members"
             case .memory:     "Memory"
             case .updates:    "Updates"
             case .appearance: "Appearance"
@@ -58,6 +59,7 @@ struct SettingsScene: View {
             case .sources:    "externaldrive.badge.plus"
             case .indexing:   "cpu"
             case .llmAccess:  "key.horizontal"
+            case .members:    "person.2"
             case .memory:     "brain"
             case .updates:    "arrow.down.circle"
             case .appearance: "paintpalette"
@@ -95,6 +97,7 @@ struct SettingsScene: View {
         case .sources:    SourcesSettingsView()
         case .indexing:   IndexingSettingsView()
         case .llmAccess:  AgentsSettingsView()
+        case .members:    MembersSettingsView()
         case .memory:     MemorySettingsView()
         case .updates:    UpdatesSettingsView()
         case .appearance: AppearanceSettingsView(settings: app.settings)

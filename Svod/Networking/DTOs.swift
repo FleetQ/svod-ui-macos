@@ -658,13 +658,23 @@ public struct Vaults: Codable, Hashable, Sendable {
         /// `default` on the wire — the vault used when `?vault=` is omitted.
         public var isDefault: Bool
         public var sync: SyncStatus?
-        public init(id: String, name: String, isDefault: Bool, sync: SyncStatus? = nil) {
+        /// The caller's access to this vault: `admin` | `editor` | `reader` (contract 0.30.0; nil on older engines).
+        public var role: String?
+        /// App-side only (not on the wire): the engine profile this vault came from; nil ⇒ the local engine.
+        public var engineId: String? = nil
+        public var engineName: String? = nil
+        public init(id: String, name: String, isDefault: Bool, sync: SyncStatus? = nil, role: String? = nil,
+                    engineId: String? = nil, engineName: String? = nil) {
             self.id = id; self.name = name; self.isDefault = isDefault; self.sync = sync
+            self.role = role; self.engineId = engineId; self.engineName = engineName
         }
         enum CodingKeys: String, CodingKey {
-            case id, name, sync
+            case id, name, sync, role
             case isDefault = "default"   // `default` is a Swift keyword
         }
+        public var isRemote: Bool { engineId != nil }
+        /// True when the engine said this caller may only read here.
+        public var isReadOnly: Bool { role == "reader" }
     }
     public var vaults: [Vault]
     public init(vaults: [Vault]) { self.vaults = vaults }
@@ -1068,4 +1078,111 @@ public struct MemoryProposalAction: Codable, Hashable, Sendable {
     public var action: String              // "accept" | "reject"
     public var note: String?
     public init(action: String, note: String? = nil) { self.action = action; self.note = note }
+}
+
+// MARK: - People: App API principals (contract 0.30.0, ADR-0019)
+
+/// One per-vault grant. `role` is `reader` | `editor`.
+public struct VaultGrant: Codable, Hashable, Sendable, Identifiable {
+    public var vault: String
+    public var role: String
+    public var id: String { vault }
+    public init(vault: String, role: String) { self.vault = vault; self.role = role }
+}
+
+/// `GET /api/v1/me` — who the engine thinks we are. Doubles as the connection test for a central engine.
+public struct Me: Codable, Hashable, Sendable {
+    public var userId: String
+    public var name: String
+    public var admin: Bool
+    /// The loopback UI identity (no key presented).
+    public var local: Bool
+    public var grants: [VaultGrant]
+    public init(userId: String, name: String, admin: Bool, local: Bool, grants: [VaultGrant] = []) {
+        self.userId = userId; self.name = name; self.admin = admin; self.local = local; self.grants = grants
+    }
+    public init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        userId = try c.decode(String.self, forKey: .userId)
+        name = try c.decodeIfPresent(String.self, forKey: .name) ?? userId
+        admin = try c.decodeIfPresent(Bool.self, forKey: .admin) ?? false
+        local = try c.decodeIfPresent(Bool.self, forKey: .local) ?? false
+        grants = try c.decodeIfPresent([VaultGrant].self, forKey: .grants) ?? []
+    }
+}
+
+/// One person with App API access. `keyRef` is the Secrets ref — never the key.
+public struct UserInfo: Codable, Hashable, Sendable, Identifiable {
+    public var userId: String
+    public var name: String
+    public var email: String?
+    public var admin: Bool
+    public var grants: [VaultGrant]
+    public var keyRef: String
+    public var id: String { userId }
+    public init(userId: String, name: String, email: String? = nil, admin: Bool = false, grants: [VaultGrant] = [], keyRef: String = "") {
+        self.userId = userId; self.name = name; self.email = email; self.admin = admin; self.grants = grants; self.keyRef = keyRef
+    }
+    public init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        userId = try c.decode(String.self, forKey: .userId)
+        name = try c.decodeIfPresent(String.self, forKey: .name) ?? userId
+        email = try c.decodeIfPresent(String.self, forKey: .email)
+        admin = try c.decodeIfPresent(Bool.self, forKey: .admin) ?? false
+        grants = try c.decodeIfPresent([VaultGrant].self, forKey: .grants) ?? []
+        keyRef = try c.decodeIfPresent(String.self, forKey: .keyRef) ?? ""
+    }
+    public func role(in vault: String) -> String? { grants.first { $0.vault == vault }?.role }
+}
+
+public struct UsersInfo: Codable, Hashable, Sendable {
+    public var users: [UserInfo]
+    public init(users: [UserInfo]) { self.users = users }
+}
+
+public struct CreateUserRequest: Codable, Hashable, Sendable {
+    public var userId: String
+    public var name: String
+    public var email: String?
+    public var admin: Bool
+    public var grants: [VaultGrant]
+    public init(userId: String, name: String, email: String? = nil, admin: Bool = false, grants: [VaultGrant] = []) {
+        self.userId = userId; self.name = name; self.email = email; self.admin = admin; self.grants = grants
+    }
+}
+
+/// Omitted (nil) fields are left unchanged by the engine.
+public struct UpdateUserRequest: Codable, Hashable, Sendable {
+    public var name: String?
+    public var email: String?
+    public var admin: Bool?
+    public var grants: [VaultGrant]?
+    public init(name: String? = nil, email: String? = nil, admin: Bool? = nil, grants: [VaultGrant]? = nil) {
+        self.name = name; self.email = email; self.admin = admin; self.grants = grants
+    }
+}
+
+/// The only response that ever carries a raw key — show it once, then forget it.
+public struct CreatedUser: Codable, Hashable, Sendable {
+    public var user: UserInfo
+    public var key: String
+    public init(user: UserInfo, key: String) { self.user = user; self.key = key }
+}
+
+public struct RotatedKey: Codable, Hashable, Sendable {
+    public var userId: String
+    public var key: String
+    public init(userId: String, key: String) { self.userId = userId; self.key = key }
+}
+
+public struct CreateSecretRequest: Codable, Hashable, Sendable {
+    public var name: String
+    public var value: String
+    public init(name: String, value: String) { self.name = name; self.value = value }
+}
+
+/// A `file:` Secrets ref on the engine host, usable wherever a ref is accepted (backup remote, API keys).
+public struct SecretRef: Codable, Hashable, Sendable {
+    public var ref: String
+    public init(ref: String) { self.ref = ref }
 }

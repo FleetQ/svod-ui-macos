@@ -108,6 +108,27 @@ public protocol SvodClient: AnyObject, Sendable {
     /// Revoke an LLM's access. Unknown id ⇒ `.notFound`.
     func deleteAgent(id: String) async throws
 
+    // People — App API principals (engine ≥ contract 0.30.0, ADR-0019). Throw
+    // `.notImplemented`/`.notFound` on engines that predate the endpoints.
+    /// Who the engine thinks we are; the connection test for a central engine.
+    func me() async throws -> Me
+    /// The people who may reach this engine (admin only ⇒ `.http(403,…)` otherwise).
+    func users() async throws -> UsersInfo
+    /// Create a person; the engine generates the key and returns it ONCE.
+    @discardableResult
+    func createUser(_ request: CreateUserRequest) async throws -> CreatedUser
+    /// Update name/email/admin/grants (omitted fields unchanged). Unknown id ⇒ `.notFound`.
+    @discardableResult
+    func updateUser(id: String, _ request: UpdateUserRequest) async throws -> UserInfo
+    /// Revoke a person; their key fails on the next call.
+    func deleteUser(id: String) async throws
+    /// Rotate a person's key; the old one fails immediately, the new one is returned once.
+    @discardableResult
+    func rotateUserKey(id: String) async throws -> RotatedKey
+    /// Store a secret on the engine host and get back a `file:` Secrets ref for config fields.
+    @discardableResult
+    func createSecret(name: String, value: String) async throws -> SecretRef
+
     // Memory / recall (engine ≥ contract 0.22.0). Throw `.notImplemented` on 501 so
     // the UI degrades to a calm "needs a newer engine" note.
     /// Aggregate stats for the Memory panel (captured/distilled counts, compression).
