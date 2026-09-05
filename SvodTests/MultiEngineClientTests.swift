@@ -9,6 +9,8 @@ final class MultiEngineClientTests: XCTestCase {
         let tag: String
         let down: Bool
         var served: [String] = []
+        /// A live socket never ends; the mock's does at once unless a test keeps it open.
+        var eventsStayOpen = false
         init(tag: String, down: Bool = false) { self.tag = tag; self.down = down; super.init() }
 
         override func vaults() async throws -> Vaults {
@@ -39,7 +41,7 @@ final class MultiEngineClientTests: XCTestCase {
         override func events() -> AsyncThrowingStream<SvodEvent, Error> {
             AsyncThrowingStream { c in
                 c.yield(SvodEvent(type: .commitCreated, ts: 1, data: EventPayload(path: "\(tag).md", commit: "c-\(tag)", vault: nil)))   // UNTAGGED on both engines: the router must tag each with that engine's default
-                c.finish()
+                if !eventsStayOpen { c.finish() }
             }
         }
     }
@@ -148,10 +150,16 @@ final class MultiEngineClientTests: XCTestCase {
     }
 
     func testEventsAreMergedAndRemoteOnesRekeyed() async throws {
-        let (router, _, _) = make()
-        _ = try await router.vaults()   // learns the remote's default vault for untagged events
+        let (router, local, _) = make()
+        _ = try await router.vaults()   // learns each engine's default vault for untagged events
+        // The merged stream closes when the LOCAL stream closes (never in production). Keep the
+        // local mock open so the remote's event is guaranteed a chance to arrive; stop at two.
+        local.eventsStayOpen = true
         var seen: [String] = []
-        for try await e in router.events() { seen.append("\(e.data.commit ?? "?")|\(e.data.vault ?? "nil")") }
+        for try await e in router.events() {
+            seen.append("\(e.data.commit ?? "?")|\(e.data.vault ?? "nil")")
+            if seen.count == 2 { break }
+        }
         XCTAssertEqual(Set(seen), ["c-local|local-main", "c-remote|remote-main@central"])
     }
 
