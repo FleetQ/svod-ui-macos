@@ -27,6 +27,8 @@ public final class MultiEngineClient: SvodClient, @unchecked Sendable {
     private var remotes: [String: Remote] = [:]
     /// Each remote's default vault id, learnt from its last `vaults()` — used to tag untagged events.
     private var remoteDefaults: [String: String] = [:]
+    /// The local engine's default vault id (same source) — an untagged local event means this vault.
+    private var localDefault: String?
     private var current: SvodClient
     private var activeKey: String?
     /// Profiles whose engine did not answer the last `vaults()` (shown in Settings).
@@ -56,10 +58,11 @@ public final class MultiEngineClient: SvodClient, @unchecked Sendable {
     }
 
     public func configure(remotes built: [Remote]) {
-        lock.lock(); defer { lock.unlock() }
+        lock.lock()
         remotes = Dictionary(uniqueKeysWithValues: built.map { ($0.id, $0) })
         let key = activeKey
-        lock.unlock(); setActiveVault(key); lock.lock()
+        lock.unlock()
+        setActiveVault(key)   // re-points `current` at the rebuilt client (or back to local)
     }
 
     public var remoteList: [Remote] { lock.lock(); defer { lock.unlock() }; return remotes.values.sorted { $0.name < $1.name } }
@@ -67,6 +70,8 @@ public final class MultiEngineClient: SvodClient, @unchecked Sendable {
 
     /// Redirect the LOCAL engine (Settings → Connection). Remote engines carry their own URLs.
     public func updateLocalBaseURL(_ url: URL) { (local as? LiveSvodClient)?.updateBaseURL(url) }
+    /// The local engine's endpoint — what `health()`/`ready()` and "Start Svod" actually target.
+    public var localBaseURL: URL { local.baseURL }
 
     // MARK: routing
 
@@ -184,39 +189,63 @@ public final class MultiEngineClient: SvodClient, @unchecked Sendable {
     }
 
     // MARK: vaults — merged across every reachable engine
+    /// Remotes are asked CONCURRENTLY: an unreachable engine costs one request timeout in total,
+    /// not one per engine, and the vault list (which launch and every reconnect wait on) is never
+    /// held up by a dead central engine longer than by one.
     public func vaults() async throws -> Vaults {
-        var out = try await local.vaults().vaults
+        let localVaults = try await local.vaults().vaults
+        let remotes = remoteList
+        let results: [(Remote, Result<[Vault], Error>)] = await withTaskGroup(of: (Remote, Result<[Vault], Error>).self) { group in
+            for r in remotes {
+                group.addTask {
+                    do { return (r, .success(try await r.client.vaults().vaults)) }
+                    catch { return (r, .failure(error)) }
+                }
+            }
+            var collected: [(Remote, Result<[Vault], Error>)] = []
+            for await item in group { collected.append(item) }
+            return collected.sorted { $0.0.name < $1.0.name }
+        }
+        var out = localVaults
         var down = Set<String>()
         var defaults: [String: String] = [:]
-        for r in remoteList {
-            do {
-                let vs = try await r.client.vaults().vaults
+        for (r, result) in results {
+            switch result {
+            case .success(let vs):
                 defaults[r.id] = vs.first(where: \.isDefault)?.id ?? vs.first?.id
                 out += vs.map { rekey($0, r) }
-            } catch {
+            case .failure:
                 down.insert(r.id)
             }
         }
-        lock.lock(); unreachable = down; remoteDefaults = defaults; lock.unlock()
+        lock.lock()
+        unreachable = down; remoteDefaults = defaults
+        localDefault = localVaults.first(where: \.isDefault)?.id ?? localVaults.first?.id
+        lock.unlock()
         return Vaults(vaults: out)
     }
 
+    /// A vault created from this Mac is created on THIS Mac's engine: the sheet takes a local
+    /// path, and a central engine's vaults are its admin's business (its own config or CLI).
     @discardableResult
     public func createVault(id: String, name: String?, path: String?) async throws -> Vault {
-        let v = try await current.createVault(id: id, name: name, path: path)
-        if let pid = VaultKey.parse(activeKey).profileId, let r = remote(pid) { return rekey(v, r) }
-        return v
+        try await local.createVault(id: id, name: name, path: path)
     }
 
     @discardableResult
     public func deleteVault(id: String, deleteFiles: Bool) async throws -> DeleteVaultResult {
         let t = target(id)
+        // The app trashes the returned directory PATH: on a central engine that is a server path
+        // (or, worse, a path that also exists on this Mac). Refuse until there is a remote-safe flow.
+        if t.client !== local { throw SvodClientError.notImplemented("A vault on a central engine is removed by that engine's admin, not from this Mac.") }
         return try await t.client.deleteVault(id: t.vault ?? id, deleteFiles: deleteFiles)
     }
 
     @discardableResult
     public func importVault(source: String, into: String?, vault: String?, followSymlinks: Bool) async throws -> ImportResult {
         let t = target(vault)
+        // `source` is a folder on THIS Mac; a central engine cannot read it.
+        if t.client !== local { throw SvodClientError.notImplemented("Importing a folder from this Mac into a vault on a central engine isn’t supported yet.") }
         return try await t.client.importVault(source: source, into: into, vault: t.vault, followSymlinks: followSymlinks)
     }
 
@@ -259,6 +288,8 @@ public final class MultiEngineClient: SvodClient, @unchecked Sendable {
     @discardableResult
     public func registerSource(vault: String?, path: String, into: String?, followSymlinks: Bool, prune: Bool, autoSync: Bool, writeBack: Bool) async throws -> ExternalSource {
         let t = target(vault)
+        // An external source is a path on THIS Mac; a central engine cannot watch it.
+        if t.client !== local { throw SvodClientError.notImplemented("Sources on this Mac can’t feed a vault on a central engine yet.") }
         return try await t.client.registerSource(vault: t.vault, path: path, into: into, followSymlinks: followSymlinks, prune: prune, autoSync: autoSync, writeBack: writeBack)
     }
     @discardableResult
@@ -352,15 +383,21 @@ public final class MultiEngineClient: SvodClient, @unchecked Sendable {
         let remotes = remoteList
         // Looked up per event, not captured at stream start: EngineModel opens this stream
         // before the first `vaults()` has taught us each remote's default vault id.
-        let defaultFor: (String) -> String? = { [weak self] pid in
+        let defaultFor: (String?) -> String? = { [weak self] pid in
             guard let self else { return nil }
             self.lock.lock(); defer { self.lock.unlock() }
-            return self.remoteDefaults[pid]
+            return pid.map { self.remoteDefaults[$0] } ?? self.localDefault
         }
         return AsyncThrowingStream { continuation in
             let localTask = Task {
                 do {
-                    for try await e in local.events() { continuation.yield(e) }
+                    for try await e in local.events() {
+                        // An untagged local event means the local DEFAULT vault. Say so, or the
+                        // "nil ⇒ active vault" gate in EngineModel applies it to a remote vault.
+                        var tagged = e
+                        if tagged.data.vault == nil, let d = defaultFor(nil) { tagged.data.vault = d }
+                        continuation.yield(tagged)
+                    }
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)

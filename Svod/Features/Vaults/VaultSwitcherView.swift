@@ -141,7 +141,7 @@ struct VaultSwitcherView: View {
     // and on engines without multi-vault support. Confirmation is owned by RootView.
     @ViewBuilder private var deleteVaultMenuItem: some View {
         if !model.multiVaultUnavailable, model.hasMultipleVaults,
-           let v = model.activeVault, !v.isDefault {
+           let v = model.activeVault, !v.isDefault, !v.isRemote {
             Divider()
             Button(role: .destructive) {
                 app.vaultPendingDeletion = v

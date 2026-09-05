@@ -1132,7 +1132,6 @@ public struct UserInfo: Codable, Hashable, Sendable, Identifiable {
         grants = try c.decodeIfPresent([VaultGrant].self, forKey: .grants) ?? []
         keyRef = try c.decodeIfPresent(String.self, forKey: .keyRef) ?? ""
     }
-    public func role(in vault: String) -> String? { grants.first { $0.vault == vault }?.role }
 }
 
 public struct UsersInfo: Codable, Hashable, Sendable {

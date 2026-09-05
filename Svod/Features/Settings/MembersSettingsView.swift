@@ -41,7 +41,7 @@ public final class MembersModel: ObservableObject {
             } else {
                 users = []
             }
-        } catch let e as SvodClientError where e.isNotImplemented || Self.isNotFound(e) {
+        } catch let e as SvodClientError where e.isNotImplemented || e.isNotFound {
             unavailable = true
         } catch let e as SvodClientError where e.isOffline {
             // keep the last good state
@@ -104,11 +104,6 @@ public final class MembersModel: ObservableObject {
         } catch {
             statusMsg = error.localizedDescription
         }
-    }
-
-    private static func isNotFound(_ e: SvodClientError) -> Bool {
-        if case .notFound = e { return true }
-        return false
     }
 
     private static func describe(_ e: SvodClientError, fallback: String) -> String {

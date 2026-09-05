@@ -50,7 +50,7 @@ public final class VaultModel: ObservableObject {
                 if previous != nil, previous != activeVaultId { app?.didSwitchVault() }
             }
             loadState = .loaded
-        } catch let e as SvodClientError where e.isNotImplemented || e.isNotFoundLike {
+        } catch let e as SvodClientError where e.isNotImplemented || e.isNotFound {
             // Engine has no multi-vault concept — present a single implicit vault.
             fallBackToSingleVault()
         } catch let e as SvodClientError where e.isOffline {
@@ -118,17 +118,12 @@ public final class VaultModel: ObservableObject {
     /// Vaults grouped for the switcher: the local engine first, then each central engine by name.
     public var vaultGroups: [(engine: String?, vaults: [Vault])] {
         let local = vaults.filter { !$0.isRemote }
-        let remoteNames = Array(Set(vaults.compactMap(\.engineName))).sorted()
-        return [(nil, local)] + remoteNames.map { n in (n, vaults.filter { $0.engineName == n }) }
+        // Grouped by the ENGINE (profile id), labelled by its name: two engines that happen to
+        // share a name stay two groups.
+        let byEngine = Dictionary(grouping: vaults.filter(\.isRemote), by: { $0.engineId ?? "" })
+        let remote = byEngine.values.sorted { ($0.first?.engineName ?? "") < ($1.first?.engineName ?? "") }
+        return [(nil, local)] + remote.map { ($0.first?.engineName ?? "Central engine", $0) }
     }
 
     public func sync(for id: String) -> SyncStatus? { vaults.first { $0.id == id }?.sync }
-}
-
-private extension SvodClientError {
-    /// A 404 (or transport "not found") — used to detect engines without /vaults.
-    var isNotFoundLike: Bool {
-        if case .notFound = self { return true }
-        return false
-    }
 }

@@ -13,7 +13,7 @@ struct AddEngineSheet: View {
     @State private var key = ""
     @State private var testing = false
     @State private var testResult: String?
-    @State private var verified: Me?
+    @State private var verified = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
@@ -22,9 +22,9 @@ struct AddEngineSheet: View {
                 TextField("Name (e.g. Company)", text: $name)
                 TextField("Address", text: $address, prompt: Text("https://svod.example.com"))
                     .font(Typography.code)
-                    .onChange(of: address) { _, _ in verified = nil; testResult = nil }
+                    .onChange(of: address) { _, _ in verified = false; testResult = nil }
                 SecureField("Personal key", text: $key, prompt: Text("svk_…"))
-                    .onChange(of: key) { _, _ in verified = nil; testResult = nil }
+                    .onChange(of: key) { _, _ in verified = false; testResult = nil }
                 if !address.lowercased().hasPrefix("https://") && !isLoopback {
                     Label("Use https:// — a key over plain HTTP can be read on the way.", systemImage: "exclamationmark.shield")
                         .font(Typography.caption).foregroundStyle(ThemeColor.warning)
@@ -34,7 +34,7 @@ struct AddEngineSheet: View {
                     if testing { ProgressView().controlSize(.small) }
                     if let testResult {
                         Text(testResult).font(Typography.caption)
-                            .foregroundStyle(verified != nil ? ThemeColor.sync : ThemeColor.danger)
+                            .foregroundStyle(verified ? ThemeColor.sync : ThemeColor.danger)
                     }
                 }
             }
@@ -44,7 +44,7 @@ struct AddEngineSheet: View {
                 Button("Cancel") { done(nil, nil, nil) }.keyboardShortcut(.cancelAction)
                 Button("Add") { done(name.trimmingCharacters(in: .whitespaces), url, key.trimmingCharacters(in: .whitespacesAndNewlines)) }
                     .keyboardShortcut(.defaultAction)
-                    .disabled(verified == nil || name.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .disabled(!verified || name.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
         .padding(Spacing.lg)
@@ -65,11 +65,11 @@ struct AddEngineSheet: View {
     private func test() async {
         guard let url else { return }
         testing = true; defer { testing = false }
-        verified = nil
+        verified = false
         let probe = LiveSvodClient(baseURL: url, bearerKey: key)
         do {
             let me = try await probe.me()
-            verified = me
+            verified = true
             let grants = me.grants.map { "\($0.vault) (\($0.role))" }.joined(separator: ", ")
             testResult = "Signed in as \(me.name)" + (me.admin ? " · admin" : "") + (grants.isEmpty ? "" : " · \(grants)")
         } catch let e as SvodClientError {

@@ -24,6 +24,4 @@ public enum VaultKey {
         }
         return (String(key[..<at]), String(key[key.index(after: at)...]))
     }
-
-    public static func isRemote(_ key: String?) -> Bool { parse(key).profileId != nil }
 }

@@ -8,14 +8,12 @@ final class VaultKeyTests: XCTestCase {
         XCTAssertEqual(VaultKey.make("socialscore", profileId: "central"), "socialscore@central")
         let (v, p) = VaultKey.parse("socialscore@central")
         XCTAssertEqual(v, "socialscore"); XCTAssertEqual(p, "central")
-        XCTAssertTrue(VaultKey.isRemote("socialscore@central"))
     }
 
     func testBareIdStaysLocal() {
         XCTAssertEqual(VaultKey.make("personal", profileId: nil), "personal")
         let (v, p) = VaultKey.parse("personal")
         XCTAssertEqual(v, "personal"); XCTAssertNil(p)
-        XCTAssertFalse(VaultKey.isRemote("personal"))
         XCTAssertNil(VaultKey.parse(nil).vaultId)
     }
 

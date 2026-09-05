@@ -334,4 +334,10 @@ public enum SvodClientError: Error, LocalizedError, Sendable {
         if case .notImplemented = self { return true }
         return false
     }
+
+    /// A 404 — together with `isNotImplemented`, "this engine predates the feature".
+    public var isNotFound: Bool {
+        if case .notFound = self { return true }
+        return false
+    }
 }

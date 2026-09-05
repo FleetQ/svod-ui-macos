@@ -146,11 +146,12 @@ private struct EditorToolbar: View {
             .keyboardShortcut("f", modifiers: [.command, .option])
             .disabled(model.previewMode)
             ToolbarIconButton(model.previewMode ? "pencil" : "eye",
-                              help: model.previewMode ? "Edit (⌘⇧P)" : "Preview (⌘⇧P)",
+                              help: model.isReadOnly ? "Read-only vault" : (model.previewMode ? "Edit (⌘⇧P)" : "Preview (⌘⇧P)"),
                               isActive: model.previewMode) {
                 withAnimation(Motion.standard) { model.togglePreview() }
             }
             .keyboardShortcut("p", modifiers: [.command, .shift])
+            .disabled(model.isReadOnly)
             ToolbarIconButton("square.and.arrow.down", help: model.isReadOnly ? "Read-only vault" : "Save (⌘S)") {
                 Task { await model.save() }
             }

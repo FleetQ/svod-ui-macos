@@ -165,6 +165,12 @@ public final class AppModel: ObservableObject {
         selectedPath = nil
         activeConflict = nil
         reloadEpoch &+= 1
+        // A reader can look but not type: land in preview.
+        if vault.isActiveReadOnly { editor.previewMode = true }
+        // `settings`/`indexStatus`/`metrics` describe the engine BEHIND THE ACTIVE VAULT, so every
+        // version gate (Members, Sync & Backup, Sources) must be re-read on a switch, not only on a
+        // (re)connect — the local and a central engine can run different contracts.
+        Task { await engine.loadMeta() }
         objectWillChange.send()
     }
 

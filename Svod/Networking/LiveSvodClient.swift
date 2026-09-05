@@ -472,8 +472,15 @@ public final class LiveSvodClient: SvodClient, @unchecked Sendable {
     static func websocketURL(from base: URL) -> URL {
         var comps = URLComponents(url: base, resolvingAgainstBaseURL: false)!
         comps.scheme = (comps.scheme == "https") ? "wss" : "ws"
-        comps.path = "/api/v1/events"
+        comps.path = Self.basePath(of: base) + "/api/v1/events"
         return comps.url!
+    }
+
+    /// A central engine may sit behind a reverse proxy under a prefix (`https://host/svod`);
+    /// the prefix is kept in front of every API path. The loopback default has none.
+    static func basePath(of base: URL) -> String {
+        let p = base.path
+        return p == "/" ? "" : (p.hasSuffix("/") ? String(p.dropLast()) : p)
     }
 
     // MARK: - HTTP plumbing
@@ -483,7 +490,7 @@ public final class LiveSvodClient: SvodClient, @unchecked Sendable {
 
     private func makeURL(_ path: String, query: [URLQueryItem]) -> URL {
         var comps = URLComponents(url: baseURL.appendingPathComponent(""), resolvingAgainstBaseURL: false)!
-        comps.path = path
+        comps.path = Self.basePath(of: baseURL) + path
         comps.queryItems = query.isEmpty ? nil : query
         return comps.url!
     }
