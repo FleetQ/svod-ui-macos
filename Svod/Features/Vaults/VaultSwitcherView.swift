@@ -16,20 +16,9 @@ struct VaultSwitcherView: View {
         // reachable. (Switch targets only appear when there's more than one vault.)
         Menu {
             if model.hasMultipleVaults {
-                ForEach(model.vaults) { v in
-                    Button { model.switchVault(v.id) } label: {
-                        HStack {
-                            // Checkmark on active
-                            if v.id == model.activeVaultId {
-                                Image(systemName: "checkmark")
-                            }
-                            Text(v.name + (v.isDefault ? " (default)" : ""))
-                            Spacer()
-                            // Per-vault sync dot via text if conflicts
-                            if let s = v.sync {
-                                syncDotLabel(s)
-                            }
-                        }
+                ForEach(Array(model.vaultGroups.enumerated()), id: \.offset) { _, group in
+                    Section(group.engine.map { "\($0) (central)" } ?? "This Mac") {
+                        ForEach(group.vaults) { v in vaultItem(v) }
                     }
                 }
                 Divider()
@@ -39,10 +28,14 @@ struct VaultSwitcherView: View {
             deleteVaultMenuItem
         } label: {
             HStack(spacing: Spacing.xxs) {
-                Image(systemName: "tray.full")
+                Image(systemName: model.activeVault?.isRemote == true ? "building.2" : "tray.full")
                     .imageScale(.small)
                 Text(model.activeVault?.name ?? "Vault")
                     .font(Typography.callout)
+                if model.isActiveReadOnly {
+                    Text("read-only").font(Typography.caption2).foregroundStyle(ThemeColor.textTertiary)
+                        .accessibilityLabel("read-only")
+                }
                 if let s = model.activeVault?.sync { inlineSyncDot(s) }
                 Image(systemName: "chevron.down")
                     .imageScale(.small)
@@ -53,6 +46,18 @@ struct VaultSwitcherView: View {
         .fixedSize()
         .help("Vault: \(model.activeVault?.name ?? "—") — switch, create, or import")
         .accessibilityLabel("Vault menu, current vault \(model.activeVault?.name ?? "none")")
+    }
+
+    private func vaultItem(_ v: Vault) -> some View {
+        Button { model.switchVault(v.id) } label: {
+            HStack {
+                if v.id == model.activeVaultId { Image(systemName: "checkmark") }
+                // A central engine's default is its own affair; the "(default)" tag is a local notion.
+                Text(v.name + (v.isDefault && !v.isRemote ? " (default)" : "") + (v.isReadOnly ? " · read-only" : ""))
+                Spacer()
+                if let s = v.sync { syncDotLabel(s) }
+            }
+        }
     }
 
     // Dot color for a vault's live sync state. nil ⇒ not synced (solo) ⇒ no dot,
@@ -136,7 +141,7 @@ struct VaultSwitcherView: View {
     // and on engines without multi-vault support. Confirmation is owned by RootView.
     @ViewBuilder private var deleteVaultMenuItem: some View {
         if !model.multiVaultUnavailable, model.hasMultipleVaults,
-           let v = model.activeVault, !v.isDefault {
+           let v = model.activeVault, !v.isDefault, !v.isRemote {
             Divider()
             Button(role: .destructive) {
                 app.vaultPendingDeletion = v

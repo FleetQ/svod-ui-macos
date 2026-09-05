@@ -10,13 +10,19 @@ public final class LiveSvodClient: SvodClient, @unchecked Sendable {
 
     public private(set) var baseURL: URL
     public private(set) var activeVault: String?
+    /// Personal API key for a central engine (contract 0.30.0); nil for the loopback engine,
+    /// which treats a key-less request as the local UI. Sent on every request AND on the
+    /// WebSocket upgrade — an event stream without it is 401 on a shared engine.
+    public let bearerKey: String?
     private let session: URLSession
     private let decoder: JSONDecoder
     private let encoder: JSONEncoder
 
     public init(baseURL: URL = URL(string: "http://127.0.0.1:7517")!,
-                session: URLSession? = nil) {
+                session: URLSession? = nil,
+                bearerKey: String? = nil) {
         self.baseURL = baseURL
+        self.bearerKey = bearerKey?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
         if let session {
             self.session = session
         } else {
@@ -232,6 +238,37 @@ public final class LiveSvodClient: SvodClient, @unchecked Sendable {
         try await sendNoResult("/api/v1/agents/\(enc)", method: "DELETE")
     }
 
+    // MARK: people — App API principals (not vault-scoped, contract 0.30.0)
+    public func me() async throws -> Me { try await get("/api/v1/me") }
+    public func users() async throws -> UsersInfo { try await get("/api/v1/users") }
+
+    @discardableResult
+    public func createUser(_ request: CreateUserRequest) async throws -> CreatedUser {
+        try await send("/api/v1/users", method: "POST", body: request, timeout: 30)
+    }
+
+    @discardableResult
+    public func updateUser(id: String, _ request: UpdateUserRequest) async throws -> UserInfo {
+        let enc = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
+        return try await send("/api/v1/users/\(enc)", method: "PUT", body: request, timeout: 30)
+    }
+
+    public func deleteUser(id: String) async throws {
+        let enc = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
+        try await sendNoResult("/api/v1/users/\(enc)", method: "DELETE")
+    }
+
+    @discardableResult
+    public func rotateUserKey(id: String) async throws -> RotatedKey {
+        let enc = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
+        return try await sendNoBody("/api/v1/users/\(enc)/key", method: "POST", timeout: 30)
+    }
+
+    @discardableResult
+    public func createSecret(name: String, value: String) async throws -> SecretRef {
+        try await send("/api/v1/secrets", method: "POST", body: CreateSecretRequest(name: name, value: value), timeout: 30)
+    }
+
     // MARK: memory / recall (not vault-scoped)
     public func memoryDashboard() async throws -> MemoryDashboard {
         try await get("/api/v1/memory/dashboard")
@@ -382,7 +419,9 @@ public final class LiveSvodClient: SvodClient, @unchecked Sendable {
     // MARK: events (WebSocket)
     public func events() -> AsyncThrowingStream<SvodEvent, Error> {
         let wsURL = Self.websocketURL(from: baseURL)
-        let task = session.webSocketTask(with: wsURL)
+        var wsReq = URLRequest(url: wsURL)
+        authorize(&wsReq)
+        let task = session.webSocketTask(with: wsReq)
         let decoder = self.decoder
         return AsyncThrowingStream { continuation in
             task.resume()
@@ -433,14 +472,25 @@ public final class LiveSvodClient: SvodClient, @unchecked Sendable {
     static func websocketURL(from base: URL) -> URL {
         var comps = URLComponents(url: base, resolvingAgainstBaseURL: false)!
         comps.scheme = (comps.scheme == "https") ? "wss" : "ws"
-        comps.path = "/api/v1/events"
+        comps.path = Self.basePath(of: base) + "/api/v1/events"
         return comps.url!
     }
 
+    /// A central engine may sit behind a reverse proxy under a prefix (`https://host/svod`);
+    /// the prefix is kept in front of every API path. The loopback default has none.
+    static func basePath(of base: URL) -> String {
+        let p = base.path
+        return p == "/" ? "" : (p.hasSuffix("/") ? String(p.dropLast()) : p)
+    }
+
     // MARK: - HTTP plumbing
+    private func authorize(_ req: inout URLRequest) {
+        if let bearerKey { req.setValue("Bearer \(bearerKey)", forHTTPHeaderField: "Authorization") }
+    }
+
     private func makeURL(_ path: String, query: [URLQueryItem]) -> URL {
         var comps = URLComponents(url: baseURL.appendingPathComponent(""), resolvingAgainstBaseURL: false)!
-        comps.path = path
+        comps.path = Self.basePath(of: baseURL) + path
         comps.queryItems = query.isEmpty ? nil : query
         return comps.url!
     }
@@ -448,6 +498,7 @@ public final class LiveSvodClient: SvodClient, @unchecked Sendable {
     private func get<T: Decodable>(_ path: String, query: [URLQueryItem] = []) async throws -> T {
         var req = URLRequest(url: makeURL(path, query: query))
         req.httpMethod = "GET"
+        authorize(&req)
         return try await perform(req)
     }
 
@@ -459,6 +510,7 @@ public final class LiveSvodClient: SvodClient, @unchecked Sendable {
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try encoder.encode(body)
         if let timeout { req.timeoutInterval = timeout }
+        authorize(&req)
         return try await perform(req)
     }
 
@@ -467,6 +519,7 @@ public final class LiveSvodClient: SvodClient, @unchecked Sendable {
         var req = URLRequest(url: makeURL(path, query: query))
         req.httpMethod = method
         if let timeout { req.timeoutInterval = timeout }
+        authorize(&req)
         return try await perform(req)
     }
 
@@ -474,6 +527,7 @@ public final class LiveSvodClient: SvodClient, @unchecked Sendable {
     private func sendNoResult(_ path: String, method: String, query: [URLQueryItem] = []) async throws {
         var req = URLRequest(url: makeURL(path, query: query))
         req.httpMethod = method
+        authorize(&req)
         let data: Data, response: URLResponse
         do { (data, response) = try await session.data(for: req) }
         catch let e as URLError {
@@ -531,4 +585,8 @@ public final class LiveSvodClient: SvodClient, @unchecked Sendable {
     private static func message(from data: Data, decoder: JSONDecoder) -> String? {
         (try? decoder.decode(APIErrorBody.self, from: data))?.message
     }
+}
+
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
 }

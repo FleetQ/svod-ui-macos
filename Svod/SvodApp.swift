@@ -2,7 +2,7 @@ import SwiftUI
 
 @main
 struct SvodApp: App {
-    @StateObject private var app = AppModel(client: LiveSvodClient())
+    @StateObject private var app = AppModel.live()
     @StateObject private var updater = Updater()
 
     var body: some Scene {

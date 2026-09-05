@@ -41,12 +41,16 @@ public final class VaultModel: ObservableObject {
             multiVaultUnavailable = false
             // Keep the current selection if still valid, else pick the default.
             if activeVaultId == nil || !vaults.contains(where: { $0.id == activeVaultId }) {
+                let previous = activeVaultId
                 let def = result.defaultVault
                 activeVaultId = def?.id
-                client.setActiveVault(def?.isDefault == true ? nil : def?.id)
+                client.setActiveVault(Self.wireKey(def))
+                // The active vault VANISHED (a central engine was removed, a vault deleted elsewhere):
+                // the open note belongs to it and every pane must re-scope, exactly like a switch.
+                if previous != nil, previous != activeVaultId { app?.didSwitchVault() }
             }
             loadState = .loaded
-        } catch let e as SvodClientError where e.isNotImplemented || e.isNotFoundLike {
+        } catch let e as SvodClientError where e.isNotImplemented || e.isNotFound {
             // Engine has no multi-vault concept — present a single implicit vault.
             fallBackToSingleVault()
         } catch let e as SvodClientError where e.isOffline {
@@ -94,19 +98,32 @@ public final class VaultModel: ObservableObject {
     public func switchVault(_ id: String) {
         guard id != activeVaultId, vaults.contains(where: { $0.id == id }) else { return }
         activeVaultId = id
-        // The default vault is addressed by omitting ?vault=; others by id.
-        let isDefault = vaults.first { $0.id == id }?.isDefault == true
-        client.setActiveVault(isDefault ? nil : id)
+        client.setActiveVault(Self.wireKey(vaults.first { $0.id == id }))
         app?.didSwitchVault()
     }
 
-    public func sync(for id: String) -> SyncStatus? { vaults.first { $0.id == id }?.sync }
-}
-
-private extension SvodClientError {
-    /// A 404 (or transport "not found") — used to detect engines without /vaults.
-    var isNotFoundLike: Bool {
-        if case .notFound = self { return true }
-        return false
+    /// What the client is told for a vault: the LOCAL default vault is addressed by omitting
+    /// `?vault=` (nil), other local vaults by id, and a vault on a central engine always by its
+    /// key — nil there would mean that engine's own default, not ours.
+    static func wireKey(_ v: Vault?) -> String? {
+        guard let v else { return nil }
+        if v.isRemote { return v.id }
+        return v.isDefault ? nil : v.id
     }
+
+    /// The active vault's role for this caller (`admin` | `editor` | `reader`; nil on engines before 0.30.0).
+    public var activeVaultRole: String? { activeVault?.role }
+    /// True when the engine said we may only read the active vault.
+    public var isActiveReadOnly: Bool { activeVault?.isReadOnly == true }
+    /// Vaults grouped for the switcher: the local engine first, then each central engine by name.
+    public var vaultGroups: [(engine: String?, vaults: [Vault])] {
+        let local = vaults.filter { !$0.isRemote }
+        // Grouped by the ENGINE (profile id), labelled by its name: two engines that happen to
+        // share a name stay two groups.
+        let byEngine = Dictionary(grouping: vaults.filter(\.isRemote), by: { $0.engineId ?? "" })
+        let remote = byEngine.values.sorted { ($0.first?.engineName ?? "") < ($1.first?.engineName ?? "") }
+        return [(nil, local)] + remote.map { ($0.first?.engineName ?? "Central engine", $0) }
+    }
+
+    public func sync(for id: String) -> SyncStatus? { vaults.first { $0.id == id }?.sync }
 }

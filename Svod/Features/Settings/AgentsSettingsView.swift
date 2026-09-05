@@ -136,7 +136,13 @@ struct AgentsSettingsView: View {
             // Generated a fresh token ⇒ write the 0600 file and hand over only a `file:` ref.
             let tokenRef: String?
             if let raw = result.newToken {
-                tokenRef = try Self.storeToken(raw, agentId: result.agentId)
+                // A central engine cannot read a file on this Mac: hand it the token once through
+                // POST /secrets (0.30.0) and keep only the engine-side `file:` ref.
+                if app.vault.activeVault?.isRemote == true {
+                    tokenRef = try await client.createSecret(name: "agent-\(result.agentId)-token", value: raw).ref
+                } else {
+                    tokenRef = try Self.storeToken(raw, agentId: result.agentId)
+                }
             } else { tokenRef = nil }   // editing without rotating ⇒ keep existing ref
 
             if result.isNew {

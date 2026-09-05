@@ -173,7 +173,7 @@ struct EngineStatusView: View {
 
     // MARK: disconnected / offline
     private var offlineState: some View {
-        OfflineStateView(endpoint: app.client.baseURL.absoluteString) {
+        OfflineStateView(endpoint: ((app.client as? MultiEngineClient)?.localBaseURL ?? app.client.baseURL).absoluteString) {
             Task { await model.start() }
         }
         .frame(minHeight: 200)
