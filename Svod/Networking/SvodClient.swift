@@ -142,6 +142,17 @@ public protocol SvodClient: AnyObject, Sendable {
     /// cross-vault [[vault:note]] previews / navigation.
     func readFile(path: String, inVault vault: String) async throws -> FileContent
 
+    // Explicit-vault variants for a multi-step operation that must keep targeting the
+    // vault it validated against (revert). The ambient vault is read when each request is
+    // BUILT, which happens after the hop off the main actor — so a vault switch queued
+    // behind the caller's last check would otherwise retarget the write. Nil ⇒ ambient.
+    func history(path: String, max: Int?, inVault vault: String?) async throws -> [CommitInfo]
+    func revision(path: String, revision: String, inVault vault: String?) async throws -> FileContent
+    @discardableResult
+    func writeFile(path: String, content: String, expectedRevision: String?, inVault vault: String?) async throws -> WriteResult
+    @discardableResult
+    func deleteFile(path: String, expectedRevision: String?, inVault vault: String?) async throws -> WriteResult
+
     // meta
     func tags() async throws -> Tags
     func settings() async throws -> Settings

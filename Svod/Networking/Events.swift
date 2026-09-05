@@ -49,6 +49,11 @@ public struct EventPayload: Codable, Hashable, Sendable {
         return "ui"
     }
 
+    /// Last path component for display; the whole path when it has none, "—" when absent.
+    public var fileName: String {
+        (path as NSString?)?.lastPathComponent ?? path ?? "—"
+    }
+
     /// Human verb for the tool, mirroring the reference viewer.
     public var verb: String {
         switch tool {

@@ -104,7 +104,10 @@ struct RootView: View {
                 .accessibilityLabel("Search")
         }
         ToolbarItem(placement: .primaryAction) {
-            Button { app.toggleInspector() } label: { Image(systemName: "sidebar.right") }
+            Button { app.toggleInspector() } label: {
+                Image(systemName: "sidebar.right")
+                    .overlay(alignment: .topTrailing) { ReviewBadge(activity: app.activity) }
+            }
                 .help("Toggle inspector")
                 .accessibilityLabel("Toggle inspector")
         }

@@ -140,7 +140,7 @@ private struct EditorToolbar: View {
             ToolbarIconButton(model.previewMode ? "pencil" : "eye",
                               help: model.previewMode ? "Edit (⌘⇧P)" : "Preview (⌘⇧P)",
                               isActive: model.previewMode) {
-                withAnimation(Motion.standard) { model.previewMode.toggle() }
+                withAnimation(Motion.standard) { model.togglePreview() }
             }
             .keyboardShortcut("p", modifiers: [.command, .shift])
             ToolbarIconButton("square.and.arrow.down", help: "Save (⌘S)") {

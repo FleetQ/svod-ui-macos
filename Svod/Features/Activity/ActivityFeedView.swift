@@ -101,7 +101,9 @@ struct ActivityFeedView: View {
 }
 
 // MARK: - Row
-private struct ActivityRow: View {
+/// One agent event. Shared with the review inbox (ReviewCard), which wraps it with
+/// its own actions, so the two surfaces can't drift apart visually.
+struct ActivityRow: View {
     let event: SvodEvent
     let onJump: () -> Void
     var showVaultTag = false
@@ -111,9 +113,7 @@ private struct ActivityRow: View {
 
     private var isConflict: Bool { event.type == .conflict }
     private var actor: String { event.data.displayActor }
-    private var fileName: String {
-        (event.data.path as NSString?)?.lastPathComponent ?? event.data.path ?? "—"
-    }
+    private var fileName: String { event.data.fileName }
     private var identityColor: Color {
         isConflict ? ThemeColor.conflict : ThemeColor.agentColor(for: actor)
     }
