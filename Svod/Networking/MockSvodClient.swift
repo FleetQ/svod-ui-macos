@@ -7,7 +7,7 @@ import Foundation
 // in the tree match files, links, search hits, history and the synthetic event
 // stream. Feature teammates should use `MockSvodClient.preview` in #Preview blocks.
 
-public final class MockSvodClient: SvodClient, @unchecked Sendable {
+public class MockSvodClient: SvodClient, @unchecked Sendable {
 
     public let baseURL = URL(string: "http://127.0.0.1:7517")!
     public private(set) var activeVault: String?

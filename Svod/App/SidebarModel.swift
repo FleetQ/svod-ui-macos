@@ -2,7 +2,7 @@ import SwiftUI
 
 // ════════════════════════════════════════════════════════════════════════
 // OWNED BY TEAMMATE 5 — Sidebar (Features/Sidebar/)
-// File tree + tag taxonomy + saved searches.
+// File tree + tag taxonomy + saved searches + pinned notes.
 // ════════════════════════════════════════════════════════════════════════
 
 @MainActor
@@ -21,6 +21,9 @@ public final class SidebarModel: ObservableObject {
     @Published public var tags: [Tags.Tag] = []
     @Published public var savedSearches: [SavedSearch] = []
     @Published public var expanded: Set<String> = []
+    /// Notes the user pinned, in pin order. Per vault, persisted; personal like a
+    /// saved search, not vault content. See `pinnedNotes` for what is shown.
+    @Published public private(set) var pinned: [String] = []
     /// The single hovered row path. Shared (not per-row @State) so hover is mutually
     /// exclusive — entering one row clears any other, even when AppKit drops a row's
     /// onHover(false) exit event during rapid clicks (which left several rows stuck
@@ -29,7 +32,12 @@ public final class SidebarModel: ObservableObject {
     @Published public var isLoading = false
     @Published public var errorMessage: String?
 
-    public init(client: SvodClient) { self.client = client }
+    private let defaults: UserDefaults
+
+    public init(client: SvodClient, defaults: UserDefaults = .standard) {
+        self.client = client
+        self.defaults = defaults
+    }
 
     private var refreshTask: Task<Void, Never>?
 
@@ -47,6 +55,7 @@ public final class SidebarModel: ObservableObject {
     public func load() async {
         isLoading = true; errorMessage = nil
         defer { isLoading = false }
+        loadPins()
         do {
             async let tree = client.tree()
             async let tags = client.tags()
@@ -74,5 +83,37 @@ public final class SidebarModel: ObservableObject {
             expanded.insert(prefix)
         }
         revealTarget = path
+    }
+
+    // MARK: - Pinned notes
+
+    private var pinsKey: String {
+        "svod.sidebar.pinned.\(app?.vault.activeVaultId ?? "default")"
+    }
+
+    /// Re-read the active vault's pins. `load()` calls this, and `load()` already runs
+    /// on every vault switch (reloadEpoch), so pins follow the vault.
+    public func loadPins() {
+        pinned = defaults.stringArray(forKey: pinsKey) ?? []
+    }
+
+    public func isPinned(_ path: String) -> Bool { pinned.contains(path) }
+
+    public func togglePin(_ path: String) {
+        if let i = pinned.firstIndex(of: path) { pinned.remove(at: i) } else { pinned.append(path) }
+        defaults.set(pinned, forKey: pinsKey)
+    }
+
+    /// Pins whose note exists in the current tree, in pin order. A pin for a note that
+    /// is gone (trashed, moved) is hidden rather than dropped, so it comes back if the
+    /// note does. Empty until the tree has loaded.
+    public var pinnedNotes: [String] {
+        guard !pinned.isEmpty, let tree else { return [] }
+        var files = Set<String>()
+        func walk(_ n: TreeNode) {
+            if n.type == .file { files.insert(n.path) } else { (n.children ?? []).forEach(walk) }
+        }
+        walk(tree)
+        return pinned.filter { files.contains($0) }
     }
 }

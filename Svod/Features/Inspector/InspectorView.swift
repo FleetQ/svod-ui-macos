@@ -23,8 +23,7 @@ struct InspectorView: View {
             if let path = app.selectedPath {
                 loaded(path: path)
             } else {
-                EmptyStateView(icon: "info.circle", title: "No note selected",
-                               message: "Open a note to see its backlinks, history and agent activity.")
+                ReviewOrEmptyState(activity: app.activity)
             }
         }
         .background(ThemeColor.surface)
@@ -36,6 +35,7 @@ struct InspectorView: View {
     private func loaded(path: String) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Spacing.lg) {
+                ReviewCard(activity: app.activity)
                 header(path: path)
                 backlinksCard
                 crossVaultBacklinksCard

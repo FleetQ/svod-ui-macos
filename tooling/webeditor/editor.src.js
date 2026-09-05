@@ -116,6 +116,10 @@ function extOf(name) {
 
 function isMarkdownFile(name) { return MD_EXTS.has(extOf(name)); }
 
+// An .html file is a page: the preview renders it instead of showing its source.
+const HTML_EXTS = new Set(["html", "htm"]);
+function isHtmlFile(name) { return HTML_EXTS.has(extOf(name)); }
+
 function markdownSupport() {
   // codeLanguages: languages — fenced ```python blocks get highlighted in the edit pane
   // too, not just in the preview (which goes through highlight.js).
@@ -151,9 +155,28 @@ function renderCodePreview(text, ext) {
   return `<pre class="code"><code class="hljs">${body}</code></pre>`;
 }
 
+// Rendered HTML lives in a sandboxed iframe. `allow-scripts` without `allow-same-origin`
+// gives the document an opaque origin: scripts run (decks, dashboards, prototypes need
+// them) but cannot reach this page, the Swift bridge, or file://. Content comes from
+// agents and synced sources — the same trust boundary as markdown.
+function renderHtmlPreview(el, text) {
+  el.replaceChildren();
+  const frame = document.createElement("iframe");
+  frame.className = "html-preview";
+  frame.setAttribute("sandbox", "allow-scripts");
+  frame.srcdoc = text;
+  el.appendChild(frame);
+}
+
 function renderPreview() {
   const el = document.getElementById("preview");
   const text = view ? view.state.doc.toString() : "";
+  const html = isHtmlFile(currentFilename);
+  el.classList.toggle("html", html);
+  if (html) {
+    renderHtmlPreview(el, text);
+    return;
+  }
   if (!isMarkdownFile(currentFilename)) {
     el.innerHTML = renderCodePreview(text, extOf(currentFilename));
     return;

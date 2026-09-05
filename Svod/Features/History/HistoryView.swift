@@ -38,7 +38,9 @@ struct HistoryView: View {
         .task(id: "\(app.selectedPath ?? "")|\(app.reloadEpoch)") {
             guard let path = app.selectedPath else { return }
             await model.load(path: path)
-            if let first = model.commits.first { await model.select(commit: first) }
+            let target = model.commits.first { $0.commit == model.focusCommit } ?? model.commits.first
+            model.focusCommit = nil
+            if let target { await model.select(commit: target) }
         }
         .alert("Restore this version?", isPresented: restoreAlertBinding, presenting: model.pendingRestore) { commit in
             Button("Cancel", role: .cancel) { model.pendingRestore = nil }

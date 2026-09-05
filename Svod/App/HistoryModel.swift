@@ -28,6 +28,9 @@ public final class HistoryModel: ObservableObject {
     /// Drives the restore confirmation alert.
     @Published var pendingRestore: CommitInfo?
     @Published var isRestoring = false
+    /// One-shot: the commit the pane should select on its next load instead of the newest
+    /// (set by the review inbox before jumping here). Cleared once consumed.
+    @Published public var focusCommit: String?
 
     public init(client: SvodClient) { self.client = client }
 
