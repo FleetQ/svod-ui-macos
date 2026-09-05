@@ -57,7 +57,7 @@ struct AddEngineSheet: View {
         guard let url else { return }
         testing = true; defer { testing = false }
         verified = false
-        let probe = LiveSvodClient(baseURL: url, bearerKey: key)
+        let probe = LiveSvodClient(baseURL: url, bearerKey: key.trimmingCharacters(in: .whitespacesAndNewlines))   // exactly what Add saves
         do {
             let me = try await probe.me()
             verified = true

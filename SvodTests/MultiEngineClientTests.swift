@@ -169,6 +169,20 @@ final class MultiEngineClientTests: XCTestCase {
         XCTAssertEqual(Set(seen), ["c-local|local-main", "c-remote|remote-main@central"], "both events within 3 s")
     }
 
+    @MainActor func testAnInsecureSavedProfileIsNeverContacted() async throws {
+        let defaults = UserDefaults(suiteName: "svod.tests.insecure.\(UUID().uuidString)")!
+        let store = EngineProfileStore(defaults: defaults, secretsDir: FileManager.default.temporaryDirectory.appendingPathComponent("svod-insecure-\(UUID().uuidString)"))
+        // Saved by 0.2.23, which only warned: a plain-http address to a remote host.
+        _ = try store.add(EngineProfile(id: "old", name: "Old", baseURL: URL(string: "http://engine.company.example:7517")!), apiKey: "svk_leak")
+        _ = try store.add(EngineProfile(id: "ok", name: "Ok", baseURL: URL(string: "https://svod.example.com")!), apiKey: "svk_fine")
+        let router = MultiEngineClient(local: EngineMock(tag: "local"))
+        router.configure(store: store)
+        XCTAssertEqual(router.insecure, ["old"])
+        router.setActiveVault("notes@old")
+        do { _ = try await router.tree(); XCTFail("the insecure engine must not be contacted") }
+        catch let e as SvodClientError { XCTAssertTrue(e.isOffline, "\(e)") }
+    }
+
     func testVanishedProfileFailsClosedInsteadOfWritingLocally() async throws {
         let (router, local, _) = make()
         router.setActiveVault("remote-docs@central")

@@ -72,11 +72,19 @@ final class MembersModelTests: XCTestCase {
 
     func testLastSeenHandlesMissingAndPresentValues() {
         XCTAssertEqual(MembersModel.lastSeen(nil), "never used")
-        XCTAssertEqual(MembersModel.lastSeen("not a date"), "never used")
+        XCTAssertNil(UserInfo(userId: "x", name: "x", lastUsedAt: "not a date").lastUsedDate)
         let now = Date(timeIntervalSince1970: 1_757_070_000)
-        let twoHoursAgo = ISO8601DateFormatter().string(from: now.addingTimeInterval(-7200))
+        let twoHoursAgo = UserInfo(userId: "x", name: "x", lastUsedAt: ISO8601DateFormatter().string(from: now.addingTimeInterval(-7200))).lastUsedDate
         XCTAssertTrue(MembersModel.lastSeen(twoHoursAgo, now: now).hasPrefix("last seen "), MembersModel.lastSeen(twoHoursAgo, now: now))
-        XCTAssertTrue(MembersModel.lastSeen("2026-09-05T14:33:06.166Z", now: now).hasPrefix("last seen "), "fractional seconds (the engine's format)")
+        let engineFormat = UserInfo(userId: "x", name: "x", lastUsedAt: "2026-09-05T14:33:06.166Z").lastUsedDate
+        XCTAssertNotNil(engineFormat, "fractional seconds (the engine's format)")
+        XCTAssertTrue(MembersModel.lastSeen(engineFormat, now: now).hasPrefix("last seen "))
+    }
+
+    func testLastSeenIsHiddenUntilTheEngineReportsIt() async {
+        let m = MembersModel(client: MockSvodClient())   // the mock's users carry no lastUsedAt (a 0.30 engine)
+        await m.load()
+        XCTAssertFalse(m.reportsLastUsed, "'never used' for everyone would be a lie on an engine that does not report it")
     }
 
     func testSlugFoldsCyrillicNames() {

@@ -1124,6 +1124,8 @@ public struct UserInfo: Codable, Hashable, Sendable, Identifiable {
     public var keyRef: String
     /// When this key last authenticated (ISO-8601 UTC); nil on a 0.30 engine or if never used.
     public var lastUsedAt: String?
+    /// `lastUsedAt` as a Date (the engine writes fractional seconds; both forms parse).
+    public var lastUsedDate: Date? { lastUsedAt.flatMap(ISO8601.parse) }
     public var id: String { userId }
     public init(userId: String, name: String, email: String? = nil, admin: Bool = false, grants: [VaultGrant] = [], keyRef: String = "", lastUsedAt: String? = nil) {
         self.userId = userId; self.name = name; self.email = email; self.admin = admin; self.grants = grants; self.keyRef = keyRef; self.lastUsedAt = lastUsedAt
@@ -1190,4 +1192,12 @@ public struct CreateSecretRequest: Codable, Hashable, Sendable {
 public struct SecretRef: Codable, Hashable, Sendable {
     public var ref: String
     public init(ref: String) { self.ref = ref }
+}
+
+
+/// ISO-8601 wire timestamps → Date, with and without fractional seconds.
+public enum ISO8601 {
+    private static let withFraction: ISO8601DateFormatter = { let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]; return f }()
+    private static let plain: ISO8601DateFormatter = { let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime]; return f }()
+    public static func parse(_ s: String) -> Date? { withFraction.date(from: s) ?? plain.date(from: s) }
 }

@@ -37,6 +37,9 @@ public final class MultiEngineClient: SvodClient, @unchecked Sendable {
     private var activeKey: String?
     /// Profiles whose engine did not answer the last `vaults()` (shown in Settings).
     public private(set) var unreachable: Set<String> = []
+    /// Profiles saved by an older build with a plain-http address to a non-loopback host. They
+    /// are never talked to (the key would travel in clear); Settings says so, remove + re-add over https.
+    public private(set) var insecure: Set<String> = []
 
     public init(local: SvodClient, remotes: [Remote] = []) {
         self.local = local
@@ -55,9 +58,15 @@ public final class MultiEngineClient: SvodClient, @unchecked Sendable {
     /// vault, if it lives on a rebuilt profile, is re-pointed at the new client.
     @MainActor
     public func configure(store: EngineProfileStore) {
-        let built = store.profiles.map { p in
-            Remote(id: p.id, name: p.name, client: LiveSvodClient(baseURL: p.baseURL, bearerKey: store.apiKey(for: p.id)))
+        var bad: Set<String> = []
+        let built = store.profiles.map { p -> Remote in
+            if EngineAddress.parse(p.baseURL.absoluteString) == nil {
+                bad.insert(p.id)
+                return Remote(id: p.id, name: p.name, client: deadEngine)
+            }
+            return Remote(id: p.id, name: p.name, client: LiveSvodClient(baseURL: p.baseURL, bearerKey: store.apiKey(for: p.id)))
         }
+        lock.lock(); insecure = bad; lock.unlock()
         configure(remotes: built)
     }
 
@@ -243,6 +252,7 @@ public final class MultiEngineClient: SvodClient, @unchecked Sendable {
     @discardableResult
     public func deleteVault(id: String, deleteFiles: Bool) async throws -> DeleteVaultResult {
         let t = target(id)
+        if t.client === deadEngine { throw SvodClientError.offline }
         // The app trashes the returned directory PATH: on a central engine that is a server path
         // (or, worse, a path that also exists on this Mac). Refuse until there is a remote-safe flow.
         if t.client !== local { throw SvodClientError.notImplemented("A vault on a central engine is removed by that engine's admin, not from this Mac.") }
@@ -252,6 +262,7 @@ public final class MultiEngineClient: SvodClient, @unchecked Sendable {
     @discardableResult
     public func importVault(source: String, into: String?, vault: String?, followSymlinks: Bool) async throws -> ImportResult {
         let t = target(vault)
+        if t.client === deadEngine { throw SvodClientError.offline }
         // `source` is a folder on THIS Mac; a central engine cannot read it.
         if t.client !== local { throw SvodClientError.notImplemented("Importing a folder from this Mac into a vault on a central engine isn’t supported yet.") }
         return try await t.client.importVault(source: source, into: into, vault: t.vault, followSymlinks: followSymlinks)
@@ -298,6 +309,7 @@ public final class MultiEngineClient: SvodClient, @unchecked Sendable {
     @discardableResult
     public func registerSource(vault: String?, path: String, into: String?, followSymlinks: Bool, prune: Bool, autoSync: Bool, writeBack: Bool) async throws -> ExternalSource {
         let t = target(vault)
+        if t.client === deadEngine { throw SvodClientError.offline }
         // An external source is a path on THIS Mac; a central engine cannot watch it.
         if t.client !== local { throw SvodClientError.notImplemented("Sources on this Mac can’t feed a vault on a central engine yet.") }
         return try await t.client.registerSource(vault: t.vault, path: path, into: into, followSymlinks: followSymlinks, prune: prune, autoSync: autoSync, writeBack: writeBack)
