@@ -1098,8 +1098,10 @@ public struct Me: Codable, Hashable, Sendable {
     /// The loopback UI identity (no key presented).
     public var local: Bool
     public var grants: [VaultGrant]
-    public init(userId: String, name: String, admin: Bool, local: Bool, grants: [VaultGrant] = []) {
-        self.userId = userId; self.name = name; self.admin = admin; self.local = local; self.grants = grants
+    /// When this key last authenticated (ISO-8601 UTC); nil on a 0.30 engine, for the local identity, or never.
+    public var lastUsedAt: String?
+    public init(userId: String, name: String, admin: Bool, local: Bool, grants: [VaultGrant] = [], lastUsedAt: String? = nil) {
+        self.userId = userId; self.name = name; self.admin = admin; self.local = local; self.grants = grants; self.lastUsedAt = lastUsedAt
     }
     public init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
@@ -1108,6 +1110,7 @@ public struct Me: Codable, Hashable, Sendable {
         admin = try c.decodeIfPresent(Bool.self, forKey: .admin) ?? false
         local = try c.decodeIfPresent(Bool.self, forKey: .local) ?? false
         grants = try c.decodeIfPresent([VaultGrant].self, forKey: .grants) ?? []
+        lastUsedAt = try c.decodeIfPresent(String.self, forKey: .lastUsedAt)
     }
 }
 
@@ -1119,9 +1122,11 @@ public struct UserInfo: Codable, Hashable, Sendable, Identifiable {
     public var admin: Bool
     public var grants: [VaultGrant]
     public var keyRef: String
+    /// When this key last authenticated (ISO-8601 UTC); nil on a 0.30 engine or if never used.
+    public var lastUsedAt: String?
     public var id: String { userId }
-    public init(userId: String, name: String, email: String? = nil, admin: Bool = false, grants: [VaultGrant] = [], keyRef: String = "") {
-        self.userId = userId; self.name = name; self.email = email; self.admin = admin; self.grants = grants; self.keyRef = keyRef
+    public init(userId: String, name: String, email: String? = nil, admin: Bool = false, grants: [VaultGrant] = [], keyRef: String = "", lastUsedAt: String? = nil) {
+        self.userId = userId; self.name = name; self.email = email; self.admin = admin; self.grants = grants; self.keyRef = keyRef; self.lastUsedAt = lastUsedAt
     }
     public init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
@@ -1131,6 +1136,7 @@ public struct UserInfo: Codable, Hashable, Sendable, Identifiable {
         admin = try c.decodeIfPresent(Bool.self, forKey: .admin) ?? false
         grants = try c.decodeIfPresent([VaultGrant].self, forKey: .grants) ?? []
         keyRef = try c.decodeIfPresent(String.self, forKey: .keyRef) ?? ""
+        lastUsedAt = try c.decodeIfPresent(String.self, forKey: .lastUsedAt)
     }
 }
 

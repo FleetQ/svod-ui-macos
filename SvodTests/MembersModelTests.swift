@@ -61,6 +61,24 @@ final class MembersModelTests: XCTestCase {
         XCTAssertFalse(m.unavailable)
     }
 
+    func testTwoMocksDoNotShareMembers() async throws {
+        let a = MockSvodClient(), b = MockSvodClient()
+        _ = try await a.createUser(CreateUserRequest(userId: "only-in-a", name: "A"))
+        let inA = try await a.users().users.contains { $0.userId == "only-in-a" }
+        let inB = try await b.users().users.contains { $0.userId == "only-in-a" }
+        XCTAssertTrue(inA)
+        XCTAssertFalse(inB, "mock state must be per instance, or tests depend on order")
+    }
+
+    func testLastSeenHandlesMissingAndPresentValues() {
+        XCTAssertEqual(MembersModel.lastSeen(nil), "never used")
+        XCTAssertEqual(MembersModel.lastSeen("not a date"), "never used")
+        let now = Date(timeIntervalSince1970: 1_757_070_000)
+        let twoHoursAgo = ISO8601DateFormatter().string(from: now.addingTimeInterval(-7200))
+        XCTAssertTrue(MembersModel.lastSeen(twoHoursAgo, now: now).hasPrefix("last seen "), MembersModel.lastSeen(twoHoursAgo, now: now))
+        XCTAssertTrue(MembersModel.lastSeen("2026-09-05T14:33:06.166Z", now: now).hasPrefix("last seen "), "fractional seconds (the engine's format)")
+    }
+
     func testSlugFoldsCyrillicNames() {
         XCTAssertEqual(MemberDraft.slug("Мария Петрова"), "maria-petrova")
         XCTAssertEqual(MemberDraft.slug("  Ivan  "), "ivan")

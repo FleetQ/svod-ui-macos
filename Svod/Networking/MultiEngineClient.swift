@@ -23,6 +23,10 @@ public final class MultiEngineClient: SvodClient, @unchecked Sendable {
     }
 
     public let local: SvodClient
+    /// Where a vault whose engine profile has VANISHED is routed: a client that fails every call
+    /// with `.offline` (nothing listens on port 1). Falling back to the local engine instead let an
+    /// autosave in flight during a profile removal land in the local default vault.
+    private let deadEngine: SvodClient = LiveSvodClient(baseURL: URL(string: "http://127.0.0.1:1")!)
     private let lock = NSLock()
     private var remotes: [String: Remote] = [:]
     /// Each remote's default vault id, learnt from its last `vaults()` — used to tag untagged events.
@@ -82,12 +86,16 @@ public final class MultiEngineClient: SvodClient, @unchecked Sendable {
         let (bare, pid) = VaultKey.parse(vault)
         lock.lock(); defer { lock.unlock() }
         activeKey = vault
-        if let pid, let r = remotes[pid] {
-            // A remote vault is ALWAYS addressed explicitly: nil would mean that engine's own default.
-            r.client.setActiveVault(bare)
-            current = r.client
+        if let pid {
+            if let r = remotes[pid] {
+                // A remote vault is ALWAYS addressed explicitly: nil would mean that engine's own default.
+                r.client.setActiveVault(bare)
+                current = r.client
+            } else {
+                current = deadEngine   // until VaultModel.load() re-selects a vault that exists
+            }
         } else {
-            local.setActiveVault(pid == nil ? vault : nil)
+            local.setActiveVault(vault)
             current = local
         }
     }
@@ -97,7 +105,7 @@ public final class MultiEngineClient: SvodClient, @unchecked Sendable {
         guard let vault else { return (current, nil) }
         let (bare, pid) = VaultKey.parse(vault)
         lock.lock(); defer { lock.unlock() }
-        if let pid, let r = remotes[pid] { return (r.client, bare) }
+        if let pid { return remotes[pid].map { ($0.client, bare) } ?? (deadEngine, bare) }
         return (local, vault)
     }
 

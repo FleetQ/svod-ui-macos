@@ -558,58 +558,58 @@ public class MockSvodClient: SvodClient, @unchecked Sendable {
     }
 
     // MARK: people — App API principals (contract 0.30.0), in-memory
-    private static var mockUsers: [UserInfo] = [
+    private var mockUsers: [UserInfo] = [
         UserInfo(userId: "maria", name: "Мария", email: "maria@example.com", admin: false,
                  grants: [VaultGrant(vault: "notes", role: "editor"), VaultGrant(vault: "research", role: "reader")],
                  keyRef: "file:/tmp/svod/secrets/user-maria.key"),
     ]
-    private static var mockKeyCounter = 0
+    private var mockKeyCounter = 0
 
     public func me() async throws -> Me {
         try await gate()
         return Me(userId: "local", name: "svod-ui", admin: true, local: true, grants: [])
     }
 
-    public func users() async throws -> UsersInfo { try await gate(); return UsersInfo(users: Self.mockUsers) }
+    public func users() async throws -> UsersInfo { try await gate(); return UsersInfo(users: mockUsers) }
 
     @discardableResult
     public func createUser(_ request: CreateUserRequest) async throws -> CreatedUser {
         try await gate()
-        if Self.mockUsers.contains(where: { $0.userId == request.userId }) {
+        if mockUsers.contains(where: { $0.userId == request.userId }) {
             throw SvodClientError.http(status: 409, message: "user id already exists: \(request.userId)")
         }
         let u = UserInfo(userId: request.userId, name: request.name, email: request.email, admin: request.admin,
                          grants: request.grants, keyRef: "file:/tmp/svod/secrets/user-\(request.userId).key")
-        Self.mockUsers.append(u)
-        Self.mockKeyCounter += 1
-        return CreatedUser(user: u, key: "svk_mock_\(request.userId)_\(Self.mockKeyCounter)")
+        mockUsers.append(u)
+        mockKeyCounter += 1
+        return CreatedUser(user: u, key: "svk_mock_\(request.userId)_\(mockKeyCounter)")
     }
 
     @discardableResult
     public func updateUser(id: String, _ request: UpdateUserRequest) async throws -> UserInfo {
         try await gate()
-        guard let i = Self.mockUsers.firstIndex(where: { $0.userId == id }) else { throw SvodClientError.notFound }
-        var u = Self.mockUsers[i]
+        guard let i = mockUsers.firstIndex(where: { $0.userId == id }) else { throw SvodClientError.notFound }
+        var u = mockUsers[i]
         if let n = request.name { u.name = n }
         if let e = request.email { u.email = e }
         if let a = request.admin { u.admin = a }
         if let g = request.grants { u.grants = g }
-        Self.mockUsers[i] = u
+        mockUsers[i] = u
         return u
     }
 
     public func deleteUser(id: String) async throws {
         try await gate()
-        guard Self.mockUsers.contains(where: { $0.userId == id }) else { throw SvodClientError.notFound }
-        Self.mockUsers.removeAll { $0.userId == id }
+        guard mockUsers.contains(where: { $0.userId == id }) else { throw SvodClientError.notFound }
+        mockUsers.removeAll { $0.userId == id }
     }
 
     @discardableResult
     public func rotateUserKey(id: String) async throws -> RotatedKey {
         try await gate()
-        guard Self.mockUsers.contains(where: { $0.userId == id }) else { throw SvodClientError.notFound }
-        Self.mockKeyCounter += 1
-        return RotatedKey(userId: id, key: "svk_mock_\(id)_\(Self.mockKeyCounter)")
+        guard mockUsers.contains(where: { $0.userId == id }) else { throw SvodClientError.notFound }
+        mockKeyCounter += 1
+        return RotatedKey(userId: id, key: "svk_mock_\(id)_\(mockKeyCounter)")
     }
 
     @discardableResult

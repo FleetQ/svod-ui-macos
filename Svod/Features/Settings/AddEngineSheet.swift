@@ -25,8 +25,8 @@ struct AddEngineSheet: View {
                     .onChange(of: address) { _, _ in verified = false; testResult = nil }
                 SecureField("Personal key", text: $key, prompt: Text("svk_…"))
                     .onChange(of: key) { _, _ in verified = false; testResult = nil }
-                if !address.lowercased().hasPrefix("https://") && !isLoopback {
-                    Label("Use https:// — a key over plain HTTP can be read on the way.", systemImage: "exclamationmark.shield")
+                if url == nil && address.lowercased().hasPrefix("http://") {
+                    Label("Only https:// is accepted (or a loopback address) — a key over plain HTTP can be read on the way.", systemImage: "exclamationmark.shield")
                         .font(Typography.caption).foregroundStyle(ThemeColor.warning)
                 }
                 HStack {
@@ -51,16 +51,7 @@ struct AddEngineSheet: View {
         .frame(width: 520)
     }
 
-    private var url: URL? {
-        let a = address.trimmingCharacters(in: .whitespaces)
-        guard let u = URL(string: a), let scheme = u.scheme?.lowercased(), scheme == "https" || scheme == "http", u.host != nil else { return nil }
-        return u
-    }
-
-    private var isLoopback: Bool {
-        let h = url?.host?.lowercased() ?? ""
-        return h == "127.0.0.1" || h == "localhost" || h == "::1"
-    }
+    private var url: URL? { EngineAddress.parse(address) }
 
     private func test() async {
         guard let url else { return }

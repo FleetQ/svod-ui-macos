@@ -31,6 +31,15 @@ public final class MembersModel: ObservableObject {
 
     public var isAdmin: Bool { me?.admin == true }
 
+    /// "last seen 3 hours ago" / "never used". Engines before 0.31.0 send no lastUsedAt.
+    public static func lastSeen(_ iso: String?, now: Date = Date()) -> String {
+        guard let iso, let date = Self.isoParser.date(from: iso) ?? Self.isoParserNoFraction.date(from: iso) else { return "never used" }
+        let f = RelativeDateTimeFormatter(); f.unitsStyle = .abbreviated
+        return "last seen " + f.localizedString(for: date, relativeTo: now)
+    }
+    private static let isoParser: ISO8601DateFormatter = { let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]; return f }()
+    private static let isoParserNoFraction: ISO8601DateFormatter = { let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime]; return f }()
+
     public func load() async {
         do {
             let who = try await client.me()
@@ -219,6 +228,10 @@ private struct MembersBody: View {
                             Text(u.name).font(.body)
                             Text(u.userId).font(Typography.caption).foregroundStyle(.secondary)
                             if u.admin { StatusPill("admin", tone: .accent) }
+                            // A key that has gone quiet is the one to revoke; "never" is a key that was handed over but not used.
+                            Text(MembersModel.lastSeen(u.lastUsedAt))
+                                .font(Typography.caption2).foregroundStyle(.tertiary)
+                                .help(u.lastUsedAt.map { "Key last used \($0)" } ?? "This key has never authenticated (or the engine predates 0.31.0)")
                         }
                         if u.grants.isEmpty && !u.admin {
                             Text("no vaults").font(Typography.caption2).foregroundStyle(.tertiary)
