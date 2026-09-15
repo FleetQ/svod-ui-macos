@@ -39,10 +39,15 @@ event="$(printf '%s' "$payload" | jq -r '.hook_event_name // empty' 2>/dev/null 
 # The session id names the state file — refuse anything that could leave STATE_DIR.
 case "$sid" in *[!A-Za-z0-9._-]*|.*) exit 0 ;; esac
 
-# Compact the JSONL transcript to plain "role: text", dropping tool-call noise and the
+# The JSONL transcript compacted to plain "role: text", without tool-call noise and without the
 # compaction summaries (they restate turns the transcript still holds).
-transcript="$(jq -rs '
-  [ .[]
+#
+# The transcript never passes through the shell as an argument or as raw jq input. As `--arg` a
+# transcript over ARG_MAX (~1 MB) stopped jq from starting, so such a session was never captured;
+# as raw input (`jq -R`) jq split multi-byte UTF-8 at its read-buffer boundaries and corrupted
+# Cyrillic text. So both the body and the byte count come straight from the JSONL file, through
+# the same filter, and the count is exactly what the engine compares (UTF-8 bytes of the string).
+TRANSCRIPT='[ .[]
     | select(.type=="user" or .type=="assistant")
     | select(.isCompactSummary != true)
     | ((.message.role // .type)) as $role
@@ -52,11 +57,10 @@ transcript="$(jq -rs '
           else "" end ) as $text
     | select($text != "")
     | "\($role): \($text)"
-  ] | join("\n\n")
-' "$tpath" 2>/dev/null || true)"
-[ -z "$transcript" ] && exit 0
+  ] | join("\n\n")'
 
-bytes="$(printf '%s' "$transcript" | wc -c | tr -d ' ')"
+bytes="$(jq -rs "($TRANSCRIPT) | utf8bytelength" "$tpath" 2>/dev/null || true)"
+case "$bytes" in ''|*[!0-9]*|0) exit 0 ;; esac
 state="$STATE_DIR/$sid"
 
 if [ "$event" != "PreCompact" ] && [ "$event" != "SessionEnd" ] && [ -f "$state" ]; then
@@ -69,12 +73,14 @@ now_ms=$(( $(date +%s) * 1000 ))
 started_ms=$now_ms
 if bt="$(stat -f %B "$tpath" 2>/dev/null)"; then started_ms=$(( bt * 1000 )); fi
 
-body="$(jq -n --arg sid "$sid" --arg project "$PROJECT" --arg t "$transcript" \
+body="$(jq -cs --arg sid "$sid" --arg project "$PROJECT" \
   --argjson started "$started_ms" --argjson ended "$now_ms" \
-  '{sessionId:$sid, project:$project, transcript:$t, startedAt:$started, endedAt:$ended}' 2>/dev/null || true)"
+  '{sessionId:$sid, project:$project, transcript:('"$TRANSCRIPT"'), startedAt:$started, endedAt:$ended}' \
+  "$tpath" 2>/dev/null || true)"
 [ -z "$body" ] && exit 0
 
-# Record the size only when the engine accepted the capture, so a failed post is retried next time.
+# Record the size only when the engine accepted the capture, so a failed post (engine down, or a
+# 409 when another capture of this session landed first) is retried on the next event.
 if printf '%s' "$body" | curl -sf -m 10 -o /dev/null -X POST "$ENGINE/api/v1/memory/capture" \
      -H 'Content-Type: application/json' --data-binary @- 2>/dev/null; then
   if [ "$event" = "SessionEnd" ]; then
