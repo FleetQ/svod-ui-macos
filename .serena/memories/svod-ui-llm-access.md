@@ -36,6 +36,31 @@ User couldn't edit / see token / copy prompt after creating an agent — actions
 Agent complaint: no partial edit — updating a 5.6KB note meant rewriting it verbatim. Added MCP tool **`edit`** (engine commit `1e84ed8`, main, DEPLOYED to :7619/:7620; tool count 14→15): `{path, oldString, newString, replaceAll?, expectedRevision?, vault?}` — oldString must occur EXACTLY once (bad_request on absent/ambiguous; replaceAll opt-in); concurrency via expectedRevision or the revision read at edit time → standard conflict shape, never clobbers. `SvodTools.edit` + registration in `SvodMcpServer`; tests in McpToolsTest + tool-count asserts in McpHttp/Tls tests. NB: engine `delete` REQUIRES expectedRevision (null ⇒ conflict).
 **Working MCP live-probe recipe (:7620, first successful handshake):** POST /mcp with headers Content-Type json + `Accept: application/json, text/event-stream` + Bearer <token from agent-*.secret>; initialize → grab `mcp-session-id` resp header → POST notifications/initialized with it → tools/list & tools/call with the same header. Earlier probes 404'd from wrong path/missing Accept.
 
+## ChatGPT Desktop свързан (2026-09-06)
+
+Агент `chatgpt-local` („ChatGpt Desktop", WRITE, трезор `personal`, промпт зададен).
+Токенът беше записан на диска от UI-я, но агентът НЕ беше стигнал до engine-а —
+`GET /api/v1/agents` не го показваше и нищо не можеше да се свърже; регистриран
+после през POST.
+
+**Пътят, който работи: ChatGPT.app носи Codex вътре**
+(`/Applications/ChatGPT.app/Contents/Resources/codex`) и чете `~/.codex/config.toml`.
+Stdio MCP сървър оттам тръгва с обикновен абонамент — без тунел, без enterprise.
+`codex mcp add svod -- <wrapper>`; чете се при стартиране на приложението.
+
+`dist/bridge/svod-mcp-chatgpt.sh` — обвивка около `svod-mcp-bridge.mjs`, която чете
+токена от 0600 файла и слага `SVOD_AUTH`; токенът не влиза в конфигурацията. Същият
+модел приложен за Lattice (`lattice-mcp-chatgpt.sh` + `~/.config/lattice/mcp-token.secret`),
+защото Codex поддържа само `--bearer-token-env-var` за HTTP сървъри.
+Harbormaster тръгва директно с `~/.config/harbormaster/start-stdio.sh`.
+
+**Другият път (ChatGPT connectors, Settings → Apps → Create) иска Business/Enterprise/Edu**
+и OpenAI Secure Tunnel — подготвен, недовършен: `tunnel-client` v0.0.14 в `~/.local/bin`,
+профил `~/.config/tunnel-client/svod-chatgpt.yaml` (health на 8099, 8080 е зает от OrbStack),
+пускач `dist/bridge/svod-chatgpt-tunnel.sh`. Липсва tunnel id + runtime ключ с
+Tunnels Read+Use (ключът в 1Password `AI Agent/OpenAI API` няма management scope).
+Пълно описание: `dist/bridge/README-chatgpt.md` (некомитнато).
+
 ## Process notes
 - Engine delegated via harbormaster `delegate_task` (async, inbox `svod-llm-access`, job `d_31e5b9d69def`, sonnet, max_turns 80). **THIRD ~600s-wall false-failure** (`code=timeout: claude -p exceeded 600s`): status `failed` but ALL code was written (uncommitted — process died before auto_commit). Recovery (matches `mem:svod-ui-delete-vault`): read the working tree → review the new files → `./gradlew test --rerun-tasks` via `ctx_execute` (green) → commit the relevant files only (excluded the agent's `claudedocs/` + `retro/` scratch) → installDist → restart :7619 → live-verify via ctx_execute JS fetch. ALWAYS inspect the tree before redoing.
 - Deploy to :7619 = `cd engine && JAVA_HOME=$(/usr/libexec/java_home -v20) ./gradlew installDist` → SIGTERM the running `java … MainKt … config.local.multivault.json` (was PID 10960) → `rm -f ~/Svod/*/.svod/lock` → relaunch detached `nohup java -cp 'build/install/svod-engine/lib/*' dev.svod.engine.MainKt <config> &`. Cold boot ~ a few s here (warm caches); poll `/ready`. gradle+curl blocked by context-mode Bash hook → use `ctx_execute`.

@@ -8,7 +8,24 @@ Added the ability to CREATE a new vault from the macOS app. Before this, the onl
 - New files `engine/.../lifecycle/{VaultController,ConfigStore}.kt`. **`ConfigStore`** is now the single shared source of truth for the persistent config — `EmbedderController` was refactored to mutate config via `ConfigStore.update{}` instead of its own `config`+`configPath`, so a vault added concurrently isn't clobbered by an embedder change. `ApiCompatibility.CURRENT_CONTRACT_VERSION` → 0.15.0.
 - Tests in `MultiVaultTest.kt`: happy-path (201 + dir/git + hot-add + survives restart), dup→409, non-empty-dir→409, bad-id→400. Full targeted run green (18 tests).
 - LIVE VERIFIED end-to-end on :7619: create→201, hot-add visible, duplicate→409. (Smoke-test vault was created then CLEANED UP: removed from `~/htdocs/svod/dist/config.local.multivault.json` + `rm -rf ~/Svod/smoketest` + restart.)
-- NB still NO delete-vault endpoint — removing a vault is manual (config edit + rm dir + restart).
+- NB still NO delete-vault endpoint — removing a vault is manual (config edit + rm dir + restart). **(STALE — `DELETE /api/v1/vaults/{id}` exists now; see `svod-ui-delete-vault`.)**
+
+## CORRECTION 2026-08-27 — "hot-adds … no restart" was only HALF true until engine v1.19.1
+
+The claim above is accurate for `VaultManager` only. Three registries that keep their OWN per-vault
+state were each built ONCE at startup from `vaults.contexts()`, so a vault created via this endpoint
+was **listed and routable but not functional** until the next restart:
+
+- `BackupService.byId` — `PUT /settings/backup` answered **200 and silently discarded the config**
+- MCP `toolsByVault` — every agent tool call answered `not_found` for that vault
+- `SourceWatchManager.byId` — `autoSync` sources registered but were never watched
+
+Fixed in **engine v1.19.1 / contract 0.29.0** via `VaultManager.Listener`; `PUT /settings/backup`
+now answers 409 `vault_not_bound` instead of a reassuring 200. Full writeup in `svod-backup-sync`.
+
+**Generalise before adding the next runtime-mutable thing:** "hot-add" is only true for the registry
+you actually wired. Anything built from `vaults.contexts()` at boot needs a listener, or it silently
+serves a stale view. Grep `vaults.contexts()` in `SvodNode.kt` whenever adding per-vault state.
 
 ## UI (svod-ui-macos, committed `eb0e83d` + `7042f95` on main + PUSHED to origin (FleetQ/svod-ui-macos), build green)
 - `SvodClient.createVault(id:name:path:)` + `CreateVaultRequest` DTO; Live POSTs `/api/v1/vaults` (NOT vault-scoped, no `?vault=`); Mock appends to a static list.

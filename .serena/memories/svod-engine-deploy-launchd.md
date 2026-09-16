@@ -124,6 +124,39 @@ what turned "cold start is 25 s – 7.5 min" from folklore into two fixable numb
 ## v1.9.0 cut correctly (2026-07-02)
 Bumped BOTH version places in one commit (`7c79a92`: gradle `version` + `SvodNode.currentAppVersion`) → live `update/check` shows current==latest==1.9.0, no phantom. CI note: the windows job logs a NON-FATAL "Could not setup Developer Command Prompt / input line too long" (MSVC vcvarsall) warning — all 6 assets still published; first place to look if the windows binary ever misbehaves.
 
+## v1.19.0 cut (2026-08-20) — and two release-process defects it exposed
+
+Cut correctly: both version places bumped in one `chore(release)` commit, tag on the bump commit,
+live `update/check` shows current == latest == 1.19.0 with no phantom update, enclosure URL
+returns 206 on a range request. **All 6 assets uploaded** (v1.18.0 managed only 4).
+
+Two defects found by verifying by hand rather than trusting the workflow's green tick:
+
+1. **`generate_release_notes: true` on all three matrix jobs** → each regenerates and appends the
+   body, so every release from at least v1.17.0 to v1.19.0 shipped its changelog printed THREE
+   times. Fixed: only the linux job generates it. Nobody had looked at a release body closely.
+2. **`fail_on_unmatched_files: false`** means a missing artifact never fails a job — which is
+   exactly how v1.18.0 shipped 4/6 assets across three "successful" jobs. **Always enumerate
+   `gh release view <tag> --json assets` after a cut; the job conclusion cannot tell you.**
+
+**This release forces a one-time re-embed** for Ollama/bge-m3 vaults (the e5-prefix fix changed
+what the vectors contain). ~2 h on a 3,096-note vault; keyword search stays up throughout. e5
+vaults are untouched. See the retrieval-quality memory for the measurements.
+
+## v1.19.1 cut (2026-08-27) — contract 0.29.0
+
+Fixes a vault created at runtime being only half-wired until the next restart (backup binding, MCP
+tool set, source watching were all startup-built maps). Detail in `svod-backup-sync`. Cut via PR #17
+→ squash-merge → tag on main. Local update was the plain `installDist` + `kickstart` path (safe: on
+`main`, not a feature branch), lib dir verified to hold exactly one jar. **Cold start measured 29.5 s
+this time**, not the usual ~13 s — the release workflow was compiling on the same machine; do not
+read a single loaded-machine boot as a regression.
+
+**CI vs local on `OnnxRerankerTest`**: the reranker latency test (`50 realistic pairs … ceiling is
+4000ms`) fails locally at ~4.5 s under load but is **skipped on CI** — it `assumeTrue`s the model is
+cached and the runner has no cache. So a green CI says nothing about it either way; check it locally
+against the *unchanged* tree before blaming a diff (it failed at 4469 ms with everything stashed).
+
 ## Release process (svod-engine, FleetQ/svod-engine, SSH remote)
 - Tag-triggered: `git tag vX.Y.Z && git push origin vX.Y.Z` → `.github/workflows/release.yml`
   builds a 3-OS matrix (macos-arm64/linux-x64/windows-x64), ~9 min. Assets per release:
@@ -140,3 +173,10 @@ domain `dev.svod.Svod` keys `svod.settings.endpointHost/Port` = 127.0.0.1:7619. 
 correctly targets the launchd engine. The screenshot "This engine doesn't support self-update"
 (needs a 404/501 from update/check) was from an EARLIER moment when :7619 ran a pre-0.18.0
 engine — current engine returns 200 and supports it.
+
+## v1.20.0 / v1.21.0 cut (2026-09-05) — people as principals, then the security hardening
+- Both deployed to :7619 from `main` via installDist + kickstart; both tagged and released by CI (6 assets each). Cold start measured 48 s under xcodebuild load, 16 s idle. `mem:svod-shared-vault-sprint-1`, `mem:svod-shared-vault-sprint-2a`.
+- **The live config stays single-user** (no `users[]`, `localAdmin` default true): `/me` = `svod-ui` admin, every vault `role: admin`. What DID change on this Mac: a keyless loopback request is the local UI only with a loopback `Host` and no foreign `Origin` — a browser page (DNS-rebound, or a cross-origin WebSocket) gets 401. The app and the MCP bridges send `Host: 127.0.0.1:7619` and no `Origin`, so nothing broke; verified live after the restart.
+- **Files the engine now writes next to the config** (`dist/`, because the live config is `dist/config.local.multivault.json`): `dist/secrets/` (keys, `POST /secrets`), `dist/audit-api.log` (people audit; on this Mac only refused requests land there, e.g. my browser-threat probes as `anonymous` 401), `dist/user-activity.json`. All three are git-ignored; `git add -A` in the repo root is safe again. `/metrics` stays open here (localAdmin=true).
+- `.svod/audit/audit.log` (MCP agents) is created 0600 since 1.21.0; the four real vaults' files were 0644 and get restricted on the first agent write after the restart — check `ls -l ~/svod/*/.svod/audit/audit.log`.
+- Never `installDist` from a feature branch while :7619 is live still holds — this sprint built in `git worktree`s (`svod-wt-shared`, `svod-wt-shared2`) and deployed only after the squash-merge landed on `main`. A checkout that shares the branch with a worktree (it happened once) shows the branch's later commits as a staged REVERSAL in the other checkout — nothing is lost, `git reset --hard && git checkout main` after the merge.

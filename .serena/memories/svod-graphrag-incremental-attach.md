@@ -85,7 +85,7 @@ full rebuild restores the truth. Not a defect — but the reason the count in th
 
 ## Process notes
 
-- Built and tested in a **git worktree** (`/Users/katsarov/htdocs/svod-wt-attach`), never
+- Built and tested in a **git worktree** (`~/svod-wt-attach`), never
   `installDist` from the main checkout while :7619 was live. Deployed by `rsync -a --delete` of
   `build/install/svod-engine/lib/` into the live path + kickstart — `--delete` matters, or the old
   `svod-engine-1.16.0.jar` stays on the classpath next to the new one.

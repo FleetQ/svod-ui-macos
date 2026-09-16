@@ -30,11 +30,16 @@ delegated to `svod` via Harbormaster; UI (SwiftUI) here.
   release so `gh release create` tags the right commit (fixes the tag-drift from 0.2.9).
 
 ## What each idea became
-1. **Capture (free, no LLM):** `.claude/settings.json` `Stop` hook →
+1. **Capture (free, no LLM):** `.claude/settings.json` hook →
    `.claude/hooks/capture-session.sh` (jq compacts transcript, curl POSTs to
    `POST /api/v1/memory/capture`). Best-effort, localhost-only, always exits 0.
-   Engine stores under `messy/sessions/<endedAt>-<slug>-<sid8>.md`, idempotent on
-   sessionId (`deduped:true`).
+   Engine stores under `messy/sessions/<endedAt>-<slug>-<sid8>.md`.
+   **SUPERSEDED 2026-09-15 (engine 1.22.0):** as first built, the hook ran only on `Stop` and the
+   engine was "idempotent on sessionId" — it kept the FIRST capture and ignored the rest, so every
+   stored session was its first response (8 live sessions, 965 B–5.8 KB). Now the hook runs on
+   Stop (first capture, then only at 2× growth), PreCompact and SessionEnd, and the engine rewrites
+   the note when a larger transcript arrives (`updated:true`; equal/smaller → `deduped:true`).
+   See `mem:svod-openviking-borrow-sprint`.
 2. **Distill (cheap, off-session):** `Scripts/recall-distill.sh` = thin
    `claude -p --model claude-haiku-4-5` wrapper over `.claude/hooks/recall-distill-prompt.md`
    (GET undistilled → compress to messy/recall drafts → mark-distilled → append proposals).

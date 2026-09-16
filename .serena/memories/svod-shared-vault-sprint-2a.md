@@ -1,0 +1,31 @@
+# Svod — shared vault sprint 2a: security hardening (2026-09-05, afternoon)
+
+Closed the security review of sprint 1 (`~/htdocs/svod/docs/security-shared-vault.md`, status table in §5). Engine **v1.21.0 / contract 0.31.0** (PR FleetQ/svod-engine#19, squash `2188065`, deployed to :7619 the same evening, tagged `v1.21.0`, CI release 6 assets), app **0.2.24 build 26** (PR FleetQ/svod-ui-macos#12, no-ff merge `6e0ade3`, released `v0.2.24` = `feb6291` via `PUBLISH=1 Scripts/release.sh 0.2.24 26`; installed app still 0.2.23). Docs: `docs/{design,architecture,test-plan}-shared-vault-hardening.md`, retro `retro/retro-2026-09-05-shared-vault-hardening.md` (app repo). Sprint 1: `mem:svod-shared-vault-sprint-1`.
+
+## Engine — what changed (`api/AppApiAuth.kt`, `api/ApiAuditLog.kt`, `api/UserActivity.kt`)
+- **Keyless loopback = local UI only if** peer is loopback AND `Host` header is a loopback name (any port) AND `Origin` is absent (native clients) or equals the request's own `host:port` (the engine's web viewer). Why both: a DNS-rebound page forges nothing but `Host`; a **cross-origin WebSocket** carries a legitimate loopback `Host` and no CORS applies, so only `Origin` stops it — and a page on another loopback PORT is another origin. Keyed requests are unaffected. This protects every single-user Mac today, not only a central engine.
+- **`ApiAuditLog`** (`<configDir>/audit-api.log`, 0600 via `SecretFiles.append`): a `Monitoring`-phase interceptor with `try { proceed() } finally {…}` records every `/api` and `/metrics` request by a keyed principal (ts, userId, method, canonical path, `vault`, status, ip), refused requests as `anonymous` (400/401/403 before a principal — a keyed caller on a non-canonical path is `anonymous` too), and thrown requests with the status Ktor's default handler sends (BadRequest 400, NotFound 404, PayloadTooLarge 413, UnsupportedMediaType / **CannotTransformContentToType** 415, else 500 — `response.status()` is null after an exception because Ktor's handler runs outside the application pipeline). The loopback UI is not audited.
+- **Refusals WARN-logged** (`AppApiAuth` logger): method, path, peer, reason (`no key`, `key not accepted`, `<user> is not an admin`, no-grant, non-loopback Host, foreign Origin, non-canonical path). Never the key value; tested with a logback `ListAppender`.
+- **`UserActivity`**: `lastUsedAt` per user, exact in memory, whole map persisted to `<configDir>/user-activity.json` at most once per `minIntervalMs` **per file** (one timestamp; `Long.MIN_VALUE` as sentinel overflowed `now - last` → use nullable), through `AtomicFile.write` + `SecretFiles.restrict` (the rename loses 0600). Surfaced in `GET /users` and `/me` (`lastUsedAt`, ISO-8601 with fractional seconds).
+- **Redaction for non-admin**: `/settings` (`vaultPath`, `host` = "", `embedder.endpoint` = null), `/sources` (basename only), `/sync/config` (no `backupRemote`, `syncPeers`, `hostId`). Per-route `if (admin)`; no shared helper.
+- **`/metrics`**: with `localAdmin=false` needs an **admin** key (401 / 403), principal attached so the audit names them. `/health`, `/ready` open.
+- **No-grant vault → 404** with `ErrorDto("not_found", "vault")`, byte-identical to the route's own unknown-vault body; reader write stays 403.
+- **`mcp/AuditLog`** (agents) now appends through `SecretFiles.append` → 0600; an older 0644 file is restricted on first append (all four real vaults were 0644; they turn 0600 when an agent next writes after 1.21.0). `AuditLogModeTest` covers both.
+- `.gitignore`: `dist/audit-api.log`, `dist/user-activity.json` (the live config lives in `dist/`, so the engine writes these into the repo).
+- Tests: `PrincipalAuthTest` 14 → 24 (Host via raw sockets — `java.net.http` refuses to set `Host`; HTTP/1.0 for "no Host"), `UserActivityTest` 3, `AuditLogModeTest` 2. Suite 454 / 0 / 11 skipped. Negative verification of 9 mutations, each breaking only its test.
+
+## App — what changed
+- `Networking/EngineAddress.swift`: `parse` accepts `https://…` or `http://` to a loopback host only; `AddEngineSheet` uses it (Test/Add disabled otherwise) and tests the trimmed key.
+- `MultiEngineClient`: `deadEngine = LiveSvodClient(baseURL: http://127.0.0.1:1)` (connection refused → `.offline` in ms) is where a **vanished** profile (removed while active) and an **insecure saved** profile (0.2.23 only warned on http) route — never the local engine, so an in-flight autosave cannot land in the local default vault; `insecure: Set<String>` shown in Settings → Connection as "insecure address"; `deleteVault/importVault/registerSource` on it → `.offline`.
+- `UserInfo.lastUsedAt` + `lastUsedDate` (`ISO8601` helper in DTOs), `Me.lastUsedAt`; Members shows "last seen …" when contract ≥ 0.31 (`MembersBody.engineReportsLastUsed` passed from the view — `MembersBody` is a private view with no `app`) or the engine reported a value.
+- `MockSvodClient`: every mutable static → instance (users, keyCounter, createdVaults, agents, proposals, sources, embedder). Merged-events test bounded to 3 s.
+- Suite 53 → 61, router class 8×/6× without a flake.
+
+## Process facts worth keeping
+- Verifier rounds: engine FAIL → FAIL → PASS, app PASS (with two small follow-ups). Nothing the verifiers found was visible to a green suite; each needed a live engine, a sibling sweep, or a reverted line.
+- The `/code-review` skill's shared `review.diff` in the scratchpad was overwritten when two reviews ran concurrently (app diff replaced the engine one); the engine finders noticed and regenerated from git. Run the two reviews sequentially, or expect this.
+- A `-Werror`-style build makes `if (false) {` a compile error (unreachable code) → gradle `test` does not run and the **stale XML** from the previous run is read as the result. Mutation tests must delete the result XML first or use a runtime-false condition (`System.nanoTime() < 0`).
+- The CLAUDE.md "fix the pattern everywhere" rule was missed twice (mock statics; 0644 sibling audit log) until review/verifier pointed at it.
+
+## Open
+Tag `v1.21.0`; release app 0.2.24; `expiresAt` for keys; `/health`/`/ready` open off loopback (proxy decision); `SvodClientError.offline` reused for vanished/insecure engines (no typed case); reconnect tears down every remote socket; `MultiEngineClient.swift` should be split before sprint 2b (offline replica, SSO).
