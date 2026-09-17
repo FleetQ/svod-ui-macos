@@ -19,10 +19,10 @@
 # A session killed without SessionEnd keeps what the last doubling captured.
 #
 # Best-effort by design: it must NEVER block or fail a session. Every path exits 0, and it
-# no-ops silently when the engine is down. Scope: this project only (wired in .claude/settings.json).
+# no-ops silently when the engine is down. Scope: every project — Scripts/install-claude-hooks.sh wires
+# it in ~/.claude/settings.json, and each session is labelled with its own project (below).
 
 ENGINE="${SVOD_ENGINE_URL:-http://127.0.0.1:7619}"
-PROJECT="svod-ui-macos"
 STATE_DIR="${SVOD_CAPTURE_STATE_DIR:-${TMPDIR:-/tmp}/svod-capture}"
 
 command -v jq  >/dev/null 2>&1 || exit 0
@@ -34,8 +34,35 @@ payload="$(cat 2>/dev/null || true)"
 sid="$(printf '%s' "$payload"   | jq -r '.session_id // empty' 2>/dev/null || true)"
 tpath="$(printf '%s' "$payload" | jq -r '.transcript_path // empty' 2>/dev/null || true)"
 event="$(printf '%s' "$payload" | jq -r '.hook_event_name // empty' 2>/dev/null || true)"
+cwd="$(printf '%s' "$payload"   | jq -r '.cwd // empty' 2>/dev/null || true)"
 [ -z "$sid" ] && exit 0
 [ -z "$tpath" ] || [ ! -f "$tpath" ] && exit 0
+
+# The project is the session directory's git remote `origin` as host/owner/repo, lowercase, so the
+# same repository gets one label whether it was cloned over https or ssh, and wherever it lives on
+# disk. Without a remote it is the directory's name.
+#   git@github.com:FleetQ/svod-engine.git          → github.com/fleetq/svod-engine
+#   https://user:token@github.com/FleetQ/svod-engine → github.com/fleetq/svod-engine (credentials dropped)
+#   ssh://git@github.com:22/FleetQ/svod-engine.git  → github.com/fleetq/svod-engine
+dir="${cwd:-${CLAUDE_PROJECT_DIR:-$PWD}}"
+PROJECT=""
+if command -v git >/dev/null 2>&1; then
+  url="$(git -C "$dir" config --get remote.origin.url 2>/dev/null || true)"
+  if [ -n "$url" ]; then
+    case "$url" in
+      *://*) rest="${url#*://}"
+             hostpart="${rest%%/*}"; path="${rest#"$hostpart"}"
+             hostpart="${hostpart##*@}"; hostpart="${hostpart%%:*}"
+             url="$hostpart$path" ;;
+      *:*)   hostpart="${url%%:*}"; path="${url#*:}"
+             url="${hostpart##*@}/${path#/}" ;;
+    esac
+    url="${url%/}"; url="${url%.git}"
+    # A local-path remote (/srv/git/x, file:///x) has no host — fall back to the directory name.
+    case "$url" in /*|.*) ;; */*) PROJECT="$(printf '%s' "$url" | tr '[:upper:]' '[:lower:]')" ;; esac
+  fi
+fi
+[ -z "$PROJECT" ] && PROJECT="$(basename "$dir")"
 # The session id names the state file — refuse anything that could leave STATE_DIR.
 case "$sid" in *[!A-Za-z0-9._-]*|.*) exit 0 ;; esac
 
