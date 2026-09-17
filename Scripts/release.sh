@@ -14,6 +14,9 @@
 #                                   across apps under the same team — store once).
 #   TEAM=UQK5BS5U9A                 Developer ID team.
 #   SKIP_NOTARIZE=1                 build + sign + DMG only (local dry run, NOT shippable).
+#   NOTARY_KEY_FILE / NOTARY_KEY_ID / NOTARY_ISSUER
+#                                   notarize with an App Store Connect API key (.p8) instead of
+#                                   the keychain profile — works while the screen is locked.
 #   PUBLISH=1                       after a green build: prepend+commit the appcast item,
 #                                   push, and `gh release` the DMG. WITHOUT this the
 #                                   script stops after artifacts and PRINTS the publish
@@ -78,8 +81,16 @@ else
   [ -n "$IDENT" ] || { echo "ERROR: no Developer ID Application identity in keychain." >&2; exit 1; }
   echo "==> codesign DMG ($IDENT)"
   codesign --force --sign "$IDENT" --timestamp "$DMG"
-  echo "==> notarytool submit (profile: $NOTARY_PROFILE) — waiting…"
-  xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait
+  if [ -n "${NOTARY_KEY_FILE:-}" ]; then
+    # An App Store Connect API key on disk. The keychain profile cannot be read while the screen is
+    # locked ("No Keychain password item found"); a key file can.
+    echo "==> notarytool submit (API key ${NOTARY_KEY_ID:?NOTARY_KEY_ID is required with NOTARY_KEY_FILE}) — waiting…"
+    xcrun notarytool submit "$DMG" --key "$NOTARY_KEY_FILE" --key-id "$NOTARY_KEY_ID" \
+      --issuer "${NOTARY_ISSUER:?NOTARY_ISSUER is required with NOTARY_KEY_FILE}" --wait
+  else
+    echo "==> notarytool submit (profile: $NOTARY_PROFILE) — waiting…"
+    xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait
+  fi
   echo "==> stapler staple"
   xcrun stapler staple "$DMG"
   spctl -a -t open --context context:primary-signature "$DMG"
