@@ -47,8 +47,9 @@ public final class EngineModel: ObservableObject {
     /// both passing the `.connected` check while one is mid-await and opening dual sockets.
     private var connecting = false
 
-    /// launchd label for the engine agent (see dist/README.md).
-    public static let launchdLabel = "dev.svod.engine"
+    /// launchd label for the engine agent (see dist/README.md); an engine running under another
+    /// label reports it in its discovery file.
+    public static var launchdLabel: String { EngineDiscovery.load()?.launchdLabel ?? EngineDiscovery.defaultLabel }
 
     public init(client: SvodClient) { self.client = client }
 
@@ -88,11 +89,27 @@ public final class EngineModel: ObservableObject {
             retryTask?.cancel(); retryTask = nil
         } catch let e as SvodClientError where e.isOffline {
             app.connection = .disconnected
+            if await adoptDiscoveredEndpoint() { reconnectAttempts = 0 }
             scheduleRetry()
         } catch {
             app.connection = .error((error as? SvodClientError)?.errorDescription ?? error.localizedDescription)
             scheduleRetry()
         }
+    }
+
+    /// The configured endpoint didn't answer. If the engine's discovery file names another
+    /// loopback endpoint and that one is ready, switch to it and persist it, the same as editing
+    /// Settings → Connection. The probe keeps a stale file from moving the app off a working port.
+    private func adoptDiscoveredEndpoint() async -> Bool {
+        guard let app, let found = EngineDiscovery.load(),
+              let target = found.endpointToAdopt(currentHost: app.settings.endpointHost, currentPort: app.settings.endpointPort),
+              let url = URL(string: "http://\(target.host):\(target.port)"),
+              let ready = try? await LiveSvodClient(baseURL: url).ready(), ready.ready
+        else { return false }
+        app.settings.endpointHost = target.host
+        app.settings.endpointPort = target.port
+        app.updateLocalEndpoint()
+        return true
     }
 
     /// Retry `connect()` with the gentle backoff (1.6s … 8s) after ANY failed
@@ -142,6 +159,10 @@ public final class EngineModel: ObservableObject {
             // the poll window — don't fight it or clobber a live connection with an error.
             if case .connected = app.connection { return }
             if let ready = try? await client.ready(), ready.ready {
+                await connect()
+                return
+            }
+            if await adoptDiscoveredEndpoint() {
                 await connect()
                 return
             }
