@@ -151,7 +151,7 @@ private struct MemoryReviewSection: View {
     var body: some View {
         Section {
             if model.loaded && model.items.isEmpty && model.acted.isEmpty {
-                Text("Nothing to review. When an agent remembers a fact or a policy, it waits here until you approve it; until then search and recall leave it out.")
+                Text("Nothing to review. When an agent remembers a fact or a policy, by default it waits here until you approve it; until then search and recall leave it out.")
                     .font(.callout).foregroundStyle(.secondary)
             }
             if let error = model.errorMessage {
