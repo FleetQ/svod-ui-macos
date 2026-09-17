@@ -183,7 +183,7 @@ public final class AppModel: ObservableObject {
         engine.reconnectNow()
     }
 
-    private func updateLocalEndpoint() {
+    func updateLocalEndpoint() {
         if let m = client as? MultiEngineClient { m.updateLocalBaseURL(settings.baseURL) }
         else { (client as? LiveSvodClient)?.updateBaseURL(settings.baseURL) }
     }
