@@ -56,6 +56,7 @@ xcodebuild -project Svod.xcodeproj -scheme Svod -configuration Release \
   -archivePath "$ARCHIVE" \
   MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="$BUILD" \
   DEVELOPMENT_TEAM="$TEAM" \
+  CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="Developer ID Application" \
   -destination 'generic/platform=macOS' archive
 
 # 2. Export a Developer-ID-signed .app (frameworks incl. Sparkle signed inside-out).
