@@ -372,7 +372,8 @@ public class MockSvodClient: SvodClient, @unchecked Sendable {
         return MemoryDashboard(sessionsCaptured: 12, sessionsDistilled: 9, notesWritten: 14,
                                capturedBytes: 2_360_000, distilledBytes: 87_400, compressionRatio: 27.0,
                                lastDistillAt: 1_752_460_000_000,
-                               openProposals: mockProposals.filter { $0.isOpen }.count)
+                               openProposals: mockProposals.filter { $0.isOpen }.count,
+                               awaitingReview: Self.reviewQueue(mockMemories.values).count)
     }
 
     public func memorySessions(distilled: Bool?, limit: Int?) async throws -> [MemorySession] {
@@ -397,6 +398,56 @@ public class MockSvodClient: SvodClient, @unchecked Sendable {
         guard let i = mockProposals.firstIndex(where: { $0.id == id }) else { throw SvodClientError.notFound }
         mockProposals[i].status = action.lowercased() == "accept" ? "accepted" : "rejected"
         return mockProposals[i]
+    }
+
+    // Review state is per instance, so a test's approvals never leak into another test.
+    private var mockMemories: [String: MemoryReviewItem] = Dictionary(uniqueKeysWithValues: [
+        MemoryReviewItem(path: "memory/facts/engine-port.md", title: "The local engine listens on 7619",
+                         excerpt: "The launchd agent serves the App API on 127.0.0.1:7619.", type: "fact",
+                         subject: "svod-engine", confidence: 0.82, source: "claude-code",
+                         created: "2026-09-16T09:12:00Z", revision: "m1"),
+        MemoryReviewItem(path: "memory/policies/no-session-links.md", title: "Never share Claude session links",
+                         excerpt: "No claude.ai session URL in commits, PRs or docs.", type: "policy",
+                         confidence: 0.64, created: "2026-09-15T18:40:00Z",
+                         contradicts: "memory/policies/session-trailer.md", needsReview: true, revision: "m2"),
+    ].map { ($0.path, $0) })
+
+    /// The engine's queue order (design D4): needs-review or contradicting first, then newest
+    /// `created` first (ISO strings compare chronologically; a missing date sorts last), then path.
+    static func reviewQueue(_ items: some Sequence<MemoryReviewItem>) -> [MemoryReviewItem] {
+        items.filter { $0.status == "provisional" || $0.needsReview }
+            .sorted { a, b in
+                let urgentA = a.needsReview || a.contradicts != nil
+                let urgentB = b.needsReview || b.contradicts != nil
+                if urgentA != urgentB { return urgentA }
+                let createdA = a.created ?? "", createdB = b.created ?? ""
+                if createdA != createdB { return createdA > createdB }
+                return a.path < b.path
+            }
+    }
+
+    public func memoryReview(limit: Int?) async throws -> MemoryReviewList {
+        try await gate()
+        if behavior == .empty { return MemoryReviewList(total: 0, items: []) }
+        let queue = Self.reviewQueue(mockMemories.values)
+        return MemoryReviewList(total: queue.count, items: Array(queue.prefix(limit ?? 200)))
+    }
+
+    @discardableResult
+    public func reviewMemory(path: String, action: MemoryReviewVerb, expectedRevision: String?) async throws -> MemoryReviewResult {
+        try await gate()
+        guard var m = mockMemories[path] else { throw SvodClientError.notFound }
+        if let expectedRevision, expectedRevision != m.revision {
+            throw SvodClientError.conflict(ConflictBody(path: path, expected: expectedRevision, current: m.revision))
+        }
+        switch action {
+        case .approve: m.status = "active"; m.needsReview = false
+        case .decline: m.status = "revoked"; m.needsReview = false
+        case .reopen:  m.status = "provisional"
+        }
+        m.revision = UUID().uuidString
+        mockMemories[path] = m
+        return MemoryReviewResult(path: path, revision: m.revision, commit: "c-" + m.revision, status: m.status ?? "")
     }
 
     @discardableResult

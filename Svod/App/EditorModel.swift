@@ -26,6 +26,9 @@ public final class EditorModel: ObservableObject {
     /// Edit (CodeMirror source) vs Preview (rendered markdown) in the web editor.
     @Published public var previewMode = true
     @Published public var dirty = false
+    /// A memory review action on the open note is in flight / its last failure (contract 0.33.0).
+    @Published public var isReviewing = false
+    @Published public var reviewMessage: String?
 
     // Editor-feature state (added by Teammate 1; foundation surface above is intact).
     /// Bare note names in the vault (for [[wikilink]] autocomplete), e.g. "architecture".
@@ -81,7 +84,7 @@ public final class EditorModel: ObservableObject {
     }
 
     public func load(path: String) async {
-        isLoading = true; errorMessage = nil
+        isLoading = true; errorMessage = nil; reviewMessage = nil
         defer { isLoading = false }
         do {
             let f = try await client.readFile(path: path)
@@ -191,6 +194,33 @@ public final class EditorModel: ObservableObject {
 
     /// The engine said we may only read the active vault (contract 0.30.0 `role: reader`).
     public var isReadOnly: Bool { app?.vault.isActiveReadOnly == true }
+
+    /// Approve or decline the open memory note, then reload it so the badges show the new status.
+    /// Unsaved edits are saved first — the engine rewrites the frontmatter against a revision.
+    public func reviewMemory(_ action: MemoryReviewVerb) async {
+        guard let path = file?.path, !isReadOnly, !isReviewing else { return }
+        reviewMessage = nil
+        if dirty {
+            await save()
+            if dirty { return }
+        }
+        isReviewing = true; defer { isReviewing = false }
+        do {
+            try await client.reviewMemory(path: path, action: action, expectedRevision: file?.revision)
+            // The buffer is clean here, so this adopts the rewritten file without a loading flash.
+            await reconcileExternalChange(path: path)
+        } catch let e as SvodClientError {
+            if MemoryReviewModel.isConflict(e) {
+                await reconcileExternalChange(path: path)
+                if case .http(409, let m) = e, let m, m != "Conflict" { reviewMessage = m }
+                else { reviewMessage = "This note changed on disk. It was reloaded; review it again." }
+            } else {
+                reviewMessage = e.errorDescription
+            }
+        } catch {
+            reviewMessage = error.localizedDescription
+        }
+    }
 
     public func save() async {
         guard let path = file?.path ?? app?.selectedPath else { return }

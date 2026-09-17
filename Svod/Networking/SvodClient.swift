@@ -141,6 +141,13 @@ public protocol SvodClient: AnyObject, Sendable {
     /// accept does not auto-create anything (suggestions-over-automation).
     @discardableResult
     func resolveProposal(id: String, action: String, note: String?) async throws -> MemoryProposal
+    /// The ACTIVE vault's memory review queue (contract 0.33.0): provisional or `needs-review`
+    /// memories, the ones a person must confirm most first. `limit` nil ⇒ the engine default.
+    func memoryReview(limit: Int?) async throws -> MemoryReviewList
+    /// Approve (→ active), decline (→ revoked) or reopen (→ provisional) one memory in the active
+    /// vault. A stale `expectedRevision` is `.conflict`; a superseded memory is `.http(409, …)`.
+    @discardableResult
+    func reviewMemory(path: String, action: MemoryReviewVerb, expectedRevision: String?) async throws -> MemoryReviewResult
 
     // external sources (engine v0.6.0 — re-syncable external files/dirs)
     func listSources(vault: String?) async throws -> [ExternalSource]
