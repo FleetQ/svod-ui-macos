@@ -11,7 +11,20 @@ The runtime paths are appended to this prompt as `RUNTIME CONTEXT`. Use only tho
 ## Steps
 1. Read `BATCH_INDEX` (`batch.json`) — a list of `{path, file, project, bytes}`. If empty, write an empty manifest and stop.
 2. For each entry, read `SESSION_BODIES/<file>` with the Read tool.
-   - Strip tool-call noise; keep decisions, gotchas, conventions, root causes, and durable facts.
+   - Strip tool-call noise. Decide line by line what survives:
+     - **KEEP**
+       - decisions, together with why they were made (and what was rejected, if the session says so);
+       - root causes of bugs or failures, with the evidence that established them;
+       - gotchas, together with the fix or workaround that worked;
+       - conventions and preferences the operator stated ("always …", "never …", "I prefer …");
+       - durable facts about systems, hosts, ports, paths, versions and releases.
+     - **SKIP**
+       - tool output (command output, file listings, logs, diffs, test runs) — keep only the conclusion drawn from it;
+       - transient debugging steps and dead ends that taught nothing durable;
+       - code restated from the repository — name the file or symbol instead;
+       - pleasantries, status chatter, and the agent narrating its own plan;
+       - anything already stated in the project's CLAUDE.md-style rules or instructions;
+       - secrets of any kind: tokens, API keys, passwords, private keys, credential URLs. Never copy one, not even partially.
    - Write ONE concise durable note per session (aim for ~25–30× compression) with the Write tool to
      `NOTES_OUT/<yyyy-mm-dd>-<slug>.md`. The calling script copies it into the vault, where the
      engine's file watcher ingests and commits it — do not write outside `WORK_DIR` and do not try to
