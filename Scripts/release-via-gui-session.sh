@@ -11,7 +11,7 @@
 # with the screen locked (checked). The `lattice-notary` profile does NOT: while the screen is
 # locked notarytool reports "No Keychain password item found", so set NOTARY_KEY_FILE /
 # NOTARY_KEY_ID / NOTARY_ISSUER (App Store Connect API key) for a release that must not depend on
-# the screen being unlocked.
+# the screen being unlocked. They are read from ~/.config/svod-release/notary.env when present.
 #
 # Output goes to build/release/release-<version>.log; the exit code of release.sh is this
 # script's exit code.
@@ -22,6 +22,14 @@ VERSION="${1:-}"
 BUILD="${2:-}"
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# The API key path and IDs for notarization live on this Mac, not in the repo. Variables already
+# set in the environment win.
+NOTARY_CONFIG="$HOME/.config/svod-release/notary.env"
+if [ -z "${NOTARY_KEY_FILE:-}" ] && [ -r "$NOTARY_CONFIG" ]; then
+  # shellcheck source=/dev/null
+  source "$NOTARY_CONFIG"
+fi
 LOG="$REPO/build/release/release-$VERSION.log"
 STATUS="$REPO/build/release/release-$VERSION.status"
 mkdir -p "$REPO/build/release"
