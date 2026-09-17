@@ -14,9 +14,6 @@
 #                                   across apps under the same team — store once).
 #   TEAM=UQK5BS5U9A                 Developer ID team.
 #   SKIP_NOTARIZE=1                 build + sign + DMG only (local dry run, NOT shippable).
-#   RELEASE_SECRETS=op              take the certificate, the App Store Connect API key and the
-#                                   Sparkle key from 1Password (Scripts/release-secrets.sh) instead
-#                                   of the login keychain — works with nobody at the Mac.
 #   PUBLISH=1                       after a green build: prepend+commit the appcast item,
 #                                   push, and `gh release` the DMG. WITHOUT this the
 #                                   script stops after artifacts and PRINTS the publish
@@ -41,21 +38,6 @@ APP="$EXPORT/Svod.app"
 DMG="$REPO/build/release/Svod-macOS-$VERSION.dmg"
 TAG="v$VERSION"
 
-SIGN_IDENTITY="Developer ID Application"
-EXPORT_OPTIONS="Scripts/ExportOptions.plist"
-KEYCHAIN_FLAGS=()
-ARCHIVE_SIGN_FLAGS=()
-if [ "${RELEASE_SECRETS:-keychain}" = "op" ]; then
-  # Sets SIGN_IDENTITY (SHA-1), RELEASE_KEYCHAIN, ASC_KEY_FILE/ID, ASC_ISSUER_ID, SPARKLE_KEY_FILE,
-  # SECRETS_DIR, and an EXIT trap that removes all of it.
-  source "$REPO/Scripts/release-secrets.sh"
-  KEYCHAIN_FLAGS=(--keychain "$RELEASE_KEYCHAIN")
-  ARCHIVE_SIGN_FLAGS=("OTHER_CODE_SIGN_FLAGS=--keychain $RELEASE_KEYCHAIN")
-  EXPORT_OPTIONS="$SECRETS_DIR/ExportOptions.plist"
-  cp Scripts/ExportOptions.plist "$EXPORT_OPTIONS"
-  /usr/libexec/PlistBuddy -c "Set :signingCertificate $SIGN_IDENTITY" "$EXPORT_OPTIONS"
-fi
-
 # build number: bump the project's current value unless given.
 CUR_BUILD="$(/usr/bin/sed -n 's/.*CURRENT_PROJECT_VERSION = \([0-9]*\);.*/\1/p' Svod.xcodeproj/project.pbxproj | head -1)"
 BUILD="${2:-${CUR_BUILD:-1}}"
@@ -74,14 +56,13 @@ xcodebuild -project Svod.xcodeproj -scheme Svod -configuration Release \
   -archivePath "$ARCHIVE" \
   MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="$BUILD" \
   DEVELOPMENT_TEAM="$TEAM" \
-  CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="$SIGN_IDENTITY" \
-  ${ARCHIVE_SIGN_FLAGS[@]+"${ARCHIVE_SIGN_FLAGS[@]}"} \
+  CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="Developer ID Application" \
   -destination 'generic/platform=macOS' archive
 
 # 2. Export a Developer-ID-signed .app (frameworks incl. Sparkle signed inside-out).
 echo "==> exportArchive (developer-id)"
 xcodebuild -exportArchive -archivePath "$ARCHIVE" \
-  -exportPath "$EXPORT" -exportOptionsPlist "$EXPORT_OPTIONS"
+  -exportPath "$EXPORT" -exportOptionsPlist Scripts/ExportOptions.plist
 [ -d "$APP" ] || { echo "ERROR: export produced no Svod.app" >&2; exit 1; }
 codesign --verify --deep --strict --verbose=1 "$APP"
 
@@ -93,21 +74,12 @@ echo "==> make-dmg"
 if [ "${SKIP_NOTARIZE:-0}" = "1" ]; then
   echo "==> SKIP_NOTARIZE=1 — leaving $DMG un-notarized (NOT shippable)"
 else
-  if [ -n "${RELEASE_KEYCHAIN:-}" ]; then
-    IDENT="$SIGN_IDENTITY"
-  else
-    IDENT="$(security find-identity -v -p codesigning 2>/dev/null | grep -m1 'Developer ID Application' | sed -E 's/.*"(.*)".*/\1/')"
-    [ -n "$IDENT" ] || { echo "ERROR: no Developer ID Application identity in keychain." >&2; exit 1; }
-  fi
+  IDENT="$(security find-identity -v -p codesigning 2>/dev/null | grep -m1 'Developer ID Application' | sed -E 's/.*"(.*)".*/\1/')"
+  [ -n "$IDENT" ] || { echo "ERROR: no Developer ID Application identity in keychain." >&2; exit 1; }
   echo "==> codesign DMG ($IDENT)"
-  codesign --force --sign "$IDENT" ${KEYCHAIN_FLAGS[@]+"${KEYCHAIN_FLAGS[@]}"} --timestamp "$DMG"
-  if [ -n "${ASC_KEY_FILE:-}" ]; then
-    echo "==> notarytool submit (App Store Connect API key $ASC_KEY_ID) — waiting…"
-    xcrun notarytool submit "$DMG" --key "$ASC_KEY_FILE" --key-id "$ASC_KEY_ID" --issuer "$ASC_ISSUER_ID" --wait
-  else
-    echo "==> notarytool submit (profile: $NOTARY_PROFILE) — waiting…"
-    xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait
-  fi
+  codesign --force --sign "$IDENT" --timestamp "$DMG"
+  echo "==> notarytool submit (profile: $NOTARY_PROFILE) — waiting…"
+  xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait
   echo "==> stapler staple"
   xcrun stapler staple "$DMG"
   spctl -a -t open --context context:primary-signature "$DMG"
@@ -117,11 +89,7 @@ fi
 echo "==> sign_update (Sparkle EdDSA)"
 SIGN_UPDATE="$(find "$HOME/Library/Developer/Xcode/DerivedData" -ipath '*Svod*' -name sign_update -type f 2>/dev/null | head -1)"
 [ -n "$SIGN_UPDATE" ] || { echo "ERROR: sign_update not found — run a build once to fetch Sparkle." >&2; exit 1; }
-if [ -n "${SPARKLE_KEY_FILE:-}" ]; then
-  SIG_LINE="$("$SIGN_UPDATE" --ed-key-file "$SPARKLE_KEY_FILE" "$DMG")"
-else
-  SIG_LINE="$("$SIGN_UPDATE" "$DMG")"   # → sparkle:edSignature="…"[ length="…"]
-fi
+SIG_LINE="$("$SIGN_UPDATE" "$DMG")"   # → sparkle:edSignature="…"[ length="…"]
 LENGTH="$(/usr/bin/stat -f%z "$DMG")"
 case "$SIG_LINE" in
   *length=*) ENCLOSURE_ATTRS="$SIG_LINE" ;;
