@@ -39,15 +39,19 @@ else
   current='{}'
 fi
 
-# Drop our entries (by script path) from every event, then any group or event left empty.
+# Drop our entries (by script path) from every event. A group or event list is dropped only when
+# removing our entries is what emptied it; anything that was already empty stays as it was.
 REMOVE='
-  def ours: (.command // "") as $c | ($c | contains($capture)) or ($c | contains($rulebook));
+  def ours: type == "object" and ((.command // "") as $c | ($c | contains($capture)) or ($c | contains($rulebook)));
+  def hasOurs: type == "object" and (.hooks | type) == "array" and any(.hooks[]; ours);
+  def stripGroup: if hasOurs then .hooks |= map(select(ours | not)) | select((.hooks | length) > 0) else . end;
   if (.hooks | type) == "object" then
-    .hooks |= (with_entries(
-                 .value |= map(if (.hooks | type) == "array" then .hooks |= map(select(ours | not)) else . end
-                               | select((.hooks | type) != "array" or (.hooks | length) > 0)))
-               | with_entries(select((.value | length) > 0)))
-    | if (.hooks | length) == 0 then del(.hooks) else . end
+    (.hooks | length) as $eventsBefore
+    | .hooks |= with_entries(
+        if (.value | type) == "array" and any(.value[]; hasOurs)
+        then (.value |= map(stripGroup)) | select((.value | length) > 0)
+        else . end)
+    | if $eventsBefore > 0 and (.hooks | length) == 0 then del(.hooks) else . end
   else . end'
 
 ADD='

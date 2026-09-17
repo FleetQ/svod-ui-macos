@@ -57,7 +57,7 @@ esac
 printf '%s' "$body" | jq -r --argjson maxLines "$MAX_LINES" --argjson maxChars "$MAX_CHARS" '
   def clean: tostring
     | gsub("[\r\n\t]+"; " ")
-    | gsub("<(?<slash>/?)(?<tag>svod-rulebook)"; "&lt;\(.slash)\(.tag)"; "i");
+    | gsub("<(?<rest>\\s*/?\\s*svod-rulebook)"; "&lt;\(.rest)"; "i");
   def cut($n): if length > $n then .[0:$n - 1] + "…" else . end;
 
   ((.awaitingReview // 0) | if type == "number" and . > 0 then floor else 0 end) as $waiting

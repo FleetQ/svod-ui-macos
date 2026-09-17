@@ -14,6 +14,7 @@ the real ~/.claude or a real engine.
 """
 import json
 import os
+import re
 import socket
 import subprocess
 import tempfile
@@ -253,6 +254,19 @@ class RulebookTests(unittest.TestCase):
         self.assertEqual(out.lower().count("</svod-rulebook>"), 1)
         self.assertEqual(len(out.splitlines()), 4, "an entry stays on one line")
 
+    def test_spaced_and_uppercase_tag_variants_are_neutralised(self):
+        variants = ["</ svod-rulebook>", "< /svod-rulebook>", "</SVOD-RULEBOOK>", "<  Svod-Rulebook >"]
+        self.engine.body = {"awaitingReview": 0, "items": [
+            self.item(1, title=f"t {v}", summary=f"s {v}", path=f"p{i}{v}.md") for i, v in enumerate(variants)
+        ] + [self.item(9)]}
+        out = self.rulebook()
+        tags = re.findall(r"<\s*/?\s*svod-rulebook", out, re.I)
+        self.assertEqual(tags, ["<svod-rulebook", "</svod-rulebook"], "only the block's own tags survive")
+        lines = out.splitlines()
+        self.assertEqual((lines[0], lines[-1]), ("<svod-rulebook>", "</svod-rulebook>"))
+        self.assertIn("- [policy] Policy 9 — Rule number 9. (memory/policies/p9.md)", lines, "a normal item is untouched")
+        self.assertIn("&lt;/ svod-rulebook>", out)
+
     def test_malformed_body_prints_nothing(self):
         self.engine.body = "not an object"
         self.assertEqual(self.rulebook(), "")
@@ -325,6 +339,17 @@ class InstallerTests(unittest.TestCase):
         self.assertNotEqual(r.returncode, 0)
         self.assertEqual(self.settings.read_text(), "{ not json")
         self.assertFalse((self.home / ".claude/hooks/svod").exists())
+
+    def test_event_lists_that_were_already_empty_are_kept(self):
+        before = {"hooks": {"Notification": [], "Stop": [{"hooks": []}],
+                            "PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "guard.sh"}]}]}}
+        self.settings.write_text(json.dumps(before))
+        self.assertEqual(self.install().returncode, 0)
+        after_install = self.data()
+        self.assertEqual(after_install["hooks"]["Notification"], [])
+        self.assertIn({"hooks": []}, after_install["hooks"]["Stop"])
+        self.assertEqual(self.install("--uninstall").returncode, 0)
+        self.assertEqual(self.data(), before)
 
     def test_foreign_hooks_in_the_same_group_survive_uninstall(self):
         dest = self.home / ".claude/hooks/svod"
