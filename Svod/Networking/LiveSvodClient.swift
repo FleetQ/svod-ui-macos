@@ -294,6 +294,20 @@ public final class LiveSvodClient: SvodClient, @unchecked Sendable {
                               body: MemoryProposalAction(action: action, note: note), timeout: 30)
     }
 
+    // Review is per-vault, unlike the rest of /memory.
+    public func memoryReview(limit: Int?) async throws -> MemoryReviewList {
+        var q: [URLQueryItem] = []
+        if let limit { q.append(.init(name: "limit", value: String(limit))) }
+        return try await get("/api/v1/memory/review", query: vaulted(q))
+    }
+
+    @discardableResult
+    public func reviewMemory(path: String, action: MemoryReviewVerb, expectedRevision: String?) async throws -> MemoryReviewResult {
+        try await send("/api/v1/memory/review", method: "POST", query: vaulted(),
+                       body: MemoryReviewRequest(path: path, action: action, expectedRevision: expectedRevision),
+                       timeout: 30)
+    }
+
     @discardableResult
     public func importVault(source: String, into: String?, vault: String?, followSymlinks: Bool) async throws -> ImportResult {
         // The engine resolves the import target from the `?vault=` query param, not the body —
@@ -572,7 +586,7 @@ public final class LiveSvodClient: SvodClient, @unchecked Sendable {
             if let body = try? decoder.decode(ConflictBody.self, from: data) {
                 throw SvodClientError.conflict(body)
             }
-            throw SvodClientError.http(status: 409, message: "Conflict")
+            throw SvodClientError.http(status: 409, message: Self.message(from: data, decoder: decoder) ?? "Conflict")
         case 400:
             throw SvodClientError.badRequest(Self.message(from: data, decoder: decoder))
         case 501:

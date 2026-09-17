@@ -302,6 +302,11 @@ public final class MultiEngineClient: SvodClient, @unchecked Sendable {
     public func resolveProposal(id: String, action: String, note: String?) async throws -> MemoryProposal {
         try await current.resolveProposal(id: id, action: action, note: note)
     }
+    public func memoryReview(limit: Int?) async throws -> MemoryReviewList { try await current.memoryReview(limit: limit) }
+    @discardableResult
+    public func reviewMemory(path: String, action: MemoryReviewVerb, expectedRevision: String?) async throws -> MemoryReviewResult {
+        try await current.reviewMemory(path: path, action: action, expectedRevision: expectedRevision)
+    }
 
     // MARK: external sources (per-vault)
     public func listSources(vault: String?) async throws -> [ExternalSource] {

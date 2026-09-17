@@ -37,6 +37,9 @@ public final class EngineModel: ObservableObject {
     /// rather than `notFound`. Verified against the live 0.23.0 engine.
     public var supportsGraphCommunities: Bool { apiVersionAtLeast(0, 24) }
 
+    /// The 0.33.0 memory review queue (`/memory/review`): approve / decline provisional memories.
+    public var supportsMemoryReview: Bool { apiVersionAtLeast(0, 33) }
+
     private var eventTask: Task<Void, Never>?
     private var retryTask: Task<Void, Never>?
     private var reconnectAttempts = 0

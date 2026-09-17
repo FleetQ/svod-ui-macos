@@ -61,7 +61,12 @@ struct EditorView: View {
             }
             ScrollView {
                 VStack(spacing: Spacing.lg) {
-                    MemoryBadgesBar(frontmatter: split.frontmatter) { handleOpenLink($0) }
+                    MemoryBadgesBar(frontmatter: split.frontmatter,
+                                    onOpenNote: { handleOpenLink($0) },
+                                    onReview: app.engine.supportsMemoryReview && !model.isReadOnly
+                                        ? { action in Task { await model.reviewMemory(action) } } : nil,
+                                    reviewing: model.isReviewing,
+                                    reviewMessage: model.reviewMessage)
                         .frame(maxWidth: Spacing.readingMeasure)
                         .padding(.horizontal, Spacing.xl)
                         .padding(.top, Spacing.lg)

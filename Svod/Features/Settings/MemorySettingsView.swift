@@ -30,6 +30,12 @@ struct MemorySettingsView: View {
                         .font(.callout).foregroundStyle(.secondary)
                 }
             } else {
+                if app.engine.supportsMemoryReview {
+                    MemoryReviewSection(model: MemoryReviewModel(client: client)) {
+                        Task { dashboard = try? await client.memoryDashboard() }
+                    }
+                    .id(app.vault.activeVault?.id ?? "default")
+                }
                 dashboardSection
                 proposalsSection
                 sessionsSection
@@ -54,6 +60,9 @@ struct MemorySettingsView: View {
                                value: d.compressionRatio > 0 ? String(format: "%.1f×", d.compressionRatio) : "—")
                 LabeledContent("Last distilled",
                                value: d.lastDistillAt.map { RelativeTime.string(from: Self.msDate($0)) } ?? "never")
+                if let waiting = d.awaitingReview {
+                    LabeledContent("Awaiting review", value: "\(waiting)")
+                }
             } else {
                 Text("No sessions captured yet. When a Claude Code session ends, the capture hook stores it here; the nightly job then distills it into durable memory.")
                     .font(.callout).foregroundStyle(.secondary)
@@ -132,6 +141,113 @@ struct MemorySettingsView: View {
 }
 
 // MARK: - Rows
+
+/// Split out so the model is created against the live client once per vault (`.id(vault)`).
+private struct MemoryReviewSection: View {
+    @StateObject var model: MemoryReviewModel
+    var onChange: () -> Void
+    @EnvironmentObject private var app: AppModel
+
+    var body: some View {
+        Section {
+            if model.loaded && model.items.isEmpty && model.acted.isEmpty {
+                Text("Nothing to review. When an agent remembers a fact or a policy, it waits here until you approve it; until then search and recall leave it out.")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
+            if let error = model.errorMessage {
+                Label(error, systemImage: "exclamationmark.triangle")
+                    .font(.callout).foregroundStyle(ThemeColor.warning)
+            }
+            ForEach(model.acted) { entry in
+                ActedRow(entry: entry) { Task { await model.undo(entry) } }
+                    .disabled(model.busy.contains(entry.item.path))
+            }
+            ForEach(model.items) { item in
+                ReviewRow(item: item,
+                          onApprove: { Task { await model.approve(item) } },
+                          onDecline: { Task { await model.decline(item) } },
+                          onOpen: { app.open(path: $0) })
+                    .disabled(model.busy.contains(item.path))
+            }
+            if model.total > model.items.count {
+                Text("Showing \(model.items.count) of \(model.total).")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        } header: {
+            Text(model.loaded ? "Awaiting review (\(model.total))" : "Awaiting review")
+        }
+        .task {
+            model.onChange = onChange
+            await model.load()
+        }
+    }
+}
+
+private struct ReviewRow: View {
+    let item: MemoryReviewItem
+    let onApprove: () -> Void
+    let onDecline: () -> Void
+    let onOpen: (String) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            HStack(spacing: Spacing.sm) {
+                Text(item.title).fontWeight(.medium).lineLimit(2)
+                Spacer()
+                if item.needsReview { StatusPill("Needs review", tone: .warning, showsDot: false) }
+                if let type = item.type { StatusPill(type.capitalized, tone: .accent, showsDot: false) }
+            }
+            if !item.excerpt.isEmpty {
+                Text(item.excerpt).font(.callout).foregroundStyle(.secondary).lineLimit(3)
+            }
+            if let contradicts = item.contradicts {
+                linkButton("Contradicts", contradicts)
+            }
+            if let supersedes = item.supersedes {
+                linkButton("Supersedes", supersedes)
+            }
+            HStack(spacing: Spacing.sm) {
+                if let subject = item.subject {
+                    Text(subject).font(.caption).foregroundStyle(.secondary)
+                }
+                if let confidence = item.confidence {
+                    Text("confidence \(Int((confidence * 100).rounded()))%")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Open") { onOpen(item.path) }.buttonStyle(.borderless)
+                Button("Decline", role: .destructive, action: onDecline).buttonStyle(.borderless)
+                Button("Approve", action: onApprove).buttonStyle(.borderless)
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    private func linkButton(_ label: String, _ path: String) -> some View {
+        Button { onOpen(path) } label: {
+            Text("\(label) \((path as NSString).lastPathComponent)")
+                .font(.caption).lineLimit(1).truncationMode(.middle)
+                .foregroundStyle(ThemeColor.link)
+        }
+        .buttonStyle(.plain)
+        .help(path)
+    }
+}
+
+private struct ActedRow: View {
+    let entry: MemoryReviewModel.Acted
+    let onUndo: () -> Void
+
+    var body: some View {
+        HStack(spacing: Spacing.sm) {
+            Text(entry.item.title).foregroundStyle(.secondary).lineLimit(1)
+            Spacer()
+            StatusPill(entry.action == .approve ? "Approved" : "Declined",
+                       tone: entry.action == .approve ? .success : .danger, showsDot: false)
+            Button("Undo", action: onUndo).buttonStyle(.borderless)
+        }
+    }
+}
 
 private struct ProposalRow: View {
     let proposal: MemoryProposal

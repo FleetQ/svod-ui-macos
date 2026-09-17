@@ -978,17 +978,20 @@ public struct MemoryDashboard: Codable, Hashable, Sendable {
     public var compressionRatio: Double
     public var lastDistillAt: Int?        // ms epoch; nil ⇒ never distilled
     public var openProposals: Int
+    /// Memories waiting for a person (contract 0.33.0); nil on older engines, which omit it.
+    public var awaitingReview: Int?
     public init(sessionsCaptured: Int = 0, sessionsDistilled: Int = 0, notesWritten: Int = 0,
                 capturedBytes: Int = 0, distilledBytes: Int = 0, compressionRatio: Double = 0,
-                lastDistillAt: Int? = nil, openProposals: Int = 0) {
+                lastDistillAt: Int? = nil, openProposals: Int = 0, awaitingReview: Int? = nil) {
         self.sessionsCaptured = sessionsCaptured; self.sessionsDistilled = sessionsDistilled
         self.notesWritten = notesWritten; self.capturedBytes = capturedBytes
         self.distilledBytes = distilledBytes; self.compressionRatio = compressionRatio
         self.lastDistillAt = lastDistillAt; self.openProposals = openProposals
+        self.awaitingReview = awaitingReview
     }
     enum CodingKeys: String, CodingKey {
         case sessionsCaptured, sessionsDistilled, notesWritten, capturedBytes,
-             distilledBytes, compressionRatio, lastDistillAt, openProposals
+             distilledBytes, compressionRatio, lastDistillAt, openProposals, awaitingReview
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -1000,6 +1003,7 @@ public struct MemoryDashboard: Codable, Hashable, Sendable {
         compressionRatio = (try? c.decode(Double.self, forKey: .compressionRatio)) ?? 0
         lastDistillAt = try? c.decodeIfPresent(Int.self, forKey: .lastDistillAt)
         openProposals = (try? c.decode(Int.self, forKey: .openProposals)) ?? 0
+        awaitingReview = try? c.decodeIfPresent(Int.self, forKey: .awaitingReview)
     }
     /// True once at least one session has been captured — used to pick the empty state.
     public var hasActivity: Bool { sessionsCaptured > 0 }
@@ -1078,6 +1082,86 @@ public struct MemoryProposalAction: Codable, Hashable, Sendable {
     public var action: String              // "accept" | "reject"
     public var note: String?
     public init(action: String, note: String? = nil) { self.action = action; self.note = note }
+}
+
+// MARK: - Memory review (contract 0.33.0)
+//
+// Agents store fact/policy memories as `status: provisional`, and recall hides provisional notes
+// until a person confirms them. The review queue lists those (plus any memory flagged
+// `needs-review`); approve → active, decline → revoked, reopen → provisional again (undo).
+
+public enum MemoryReviewVerb: String, Codable, Hashable, Sendable {
+    case approve, decline, reopen
+}
+
+public struct MemoryReviewItem: Codable, Hashable, Sendable, Identifiable {
+    public var path: String
+    public var title: String
+    public var excerpt: String
+    public var type: String?
+    public var status: String?
+    public var subject: String?
+    public var confidence: Double?
+    public var source: String?
+    public var created: String?
+    public var contradicts: String?
+    public var supersedes: String?
+    public var needsReview: Bool
+    public var revision: String
+    public var id: String { path }
+    public init(path: String, title: String, excerpt: String = "", type: String? = nil,
+                status: String? = "provisional", subject: String? = nil, confidence: Double? = nil,
+                source: String? = nil, created: String? = nil, contradicts: String? = nil,
+                supersedes: String? = nil, needsReview: Bool = false, revision: String) {
+        self.path = path; self.title = title; self.excerpt = excerpt; self.type = type
+        self.status = status; self.subject = subject; self.confidence = confidence
+        self.source = source; self.created = created; self.contradicts = contradicts
+        self.supersedes = supersedes; self.needsReview = needsReview; self.revision = revision
+    }
+    enum CodingKeys: String, CodingKey {
+        case path, title, excerpt, type, status, subject, confidence, source, created,
+             contradicts, supersedes, needsReview, revision
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        path = try c.decode(String.self, forKey: .path)
+        title = (try? c.decode(String.self, forKey: .title)) ?? (path as NSString).lastPathComponent
+        excerpt = (try? c.decode(String.self, forKey: .excerpt)) ?? ""
+        type = try? c.decodeIfPresent(String.self, forKey: .type)
+        status = try? c.decodeIfPresent(String.self, forKey: .status)
+        subject = try? c.decodeIfPresent(String.self, forKey: .subject)
+        confidence = try? c.decodeIfPresent(Double.self, forKey: .confidence)
+        source = try? c.decodeIfPresent(String.self, forKey: .source)
+        created = try? c.decodeIfPresent(String.self, forKey: .created)
+        contradicts = try? c.decodeIfPresent(String.self, forKey: .contradicts)
+        supersedes = try? c.decodeIfPresent(String.self, forKey: .supersedes)
+        needsReview = (try? c.decode(Bool.self, forKey: .needsReview)) ?? false
+        revision = try c.decode(String.self, forKey: .revision)
+    }
+}
+
+/// `GET /api/v1/memory/review`. `total` is the full queue size; `items` is capped by `limit`.
+public struct MemoryReviewList: Codable, Hashable, Sendable {
+    public var total: Int
+    public var items: [MemoryReviewItem]
+    public init(total: Int, items: [MemoryReviewItem]) { self.total = total; self.items = items }
+}
+
+/// Body of `POST /api/v1/memory/review`.
+public struct MemoryReviewRequest: Codable, Hashable, Sendable {
+    public var path: String
+    public var action: MemoryReviewVerb
+    public var expectedRevision: String?
+}
+
+public struct MemoryReviewResult: Codable, Hashable, Sendable {
+    public var path: String
+    public var revision: String
+    public var commit: String?
+    public var status: String
+    public init(path: String, revision: String, commit: String? = nil, status: String) {
+        self.path = path; self.revision = revision; self.commit = commit; self.status = status
+    }
 }
 
 // MARK: - People: App API principals (contract 0.30.0, ADR-0019)
