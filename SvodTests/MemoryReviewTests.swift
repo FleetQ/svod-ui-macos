@@ -69,6 +69,23 @@ final class MemoryReviewTests: XCTestCase {
         XCTAssertEqual(model.total, 1, "a declined memory must not come back on reload")
     }
 
+    func testMockQueueOrderMatchesTheEngine() {
+        let items = [
+            MemoryReviewItem(path: "b-old.md", title: "", created: "2026-09-01T00:00:00Z", revision: "1"),
+            MemoryReviewItem(path: "z-new.md", title: "", created: "2026-09-17T00:00:00Z", revision: "2"),
+            MemoryReviewItem(path: "urgent-old.md", title: "", created: "2026-08-01T00:00:00Z", needsReview: true, revision: "3"),
+            MemoryReviewItem(path: "a-old.md", title: "", created: "2026-09-01T00:00:00Z", revision: "4"),
+            MemoryReviewItem(path: "no-date.md", title: "", created: nil, revision: "5"),
+            MemoryReviewItem(path: "contradicts-new.md", title: "", created: "2026-09-10T00:00:00Z",
+                             contradicts: "x.md", revision: "6"),
+            MemoryReviewItem(path: "active.md", title: "", status: "active", created: "2026-09-20T00:00:00Z", revision: "7"),
+        ]
+        XCTAssertEqual(MockSvodClient.reviewQueue(items).map(\.path),
+                       ["contradicts-new.md", "urgent-old.md", "z-new.md", "a-old.md", "b-old.md", "no-date.md"])
+        XCTAssertEqual(MockSvodClient.reviewQueue(items.reversed()).map(\.path),
+                       MockSvodClient.reviewQueue(items).map(\.path), "order must not depend on input order")
+    }
+
     // MARK: U2
 
     func testFailedApproveRestoresTheRowAndReportsIt() async throws {

@@ -373,7 +373,7 @@ public class MockSvodClient: SvodClient, @unchecked Sendable {
                                capturedBytes: 2_360_000, distilledBytes: 87_400, compressionRatio: 27.0,
                                lastDistillAt: 1_752_460_000_000,
                                openProposals: mockProposals.filter { $0.isOpen }.count,
-                               awaitingReview: Self.awaiting(mockMemories.values).count)
+                               awaitingReview: Self.reviewQueue(mockMemories.values).count)
     }
 
     public func memorySessions(distilled: Bool?, limit: Int?) async throws -> [MemorySession] {
@@ -412,16 +412,24 @@ public class MockSvodClient: SvodClient, @unchecked Sendable {
                          contradicts: "memory/policies/session-trailer.md", needsReview: true, revision: "m2"),
     ].map { ($0.path, $0) })
 
-    private static func awaiting(_ items: some Sequence<MemoryReviewItem>) -> [MemoryReviewItem] {
+    /// The engine's queue order (design D4): needs-review or contradicting first, then newest
+    /// `created` first (ISO strings compare chronologically; a missing date sorts last), then path.
+    static func reviewQueue(_ items: some Sequence<MemoryReviewItem>) -> [MemoryReviewItem] {
         items.filter { $0.status == "provisional" || $0.needsReview }
-            .sorted { ($0.needsReview || $0.contradicts != nil ? 0 : 1, $1.created ?? "", $0.path)
-                    < ($1.needsReview || $1.contradicts != nil ? 0 : 1, $0.created ?? "", $1.path) }
+            .sorted { a, b in
+                let urgentA = a.needsReview || a.contradicts != nil
+                let urgentB = b.needsReview || b.contradicts != nil
+                if urgentA != urgentB { return urgentA }
+                let createdA = a.created ?? "", createdB = b.created ?? ""
+                if createdA != createdB { return createdA > createdB }
+                return a.path < b.path
+            }
     }
 
     public func memoryReview(limit: Int?) async throws -> MemoryReviewList {
         try await gate()
         if behavior == .empty { return MemoryReviewList(total: 0, items: []) }
-        let queue = Self.awaiting(mockMemories.values)
+        let queue = Self.reviewQueue(mockMemories.values)
         return MemoryReviewList(total: queue.count, items: Array(queue.prefix(limit ?? 200)))
     }
 

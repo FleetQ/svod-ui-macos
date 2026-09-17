@@ -223,8 +223,9 @@ private struct ReviewRow: View {
         .padding(.vertical, 2)
     }
 
-    private func linkButton(_ label: String, _ path: String) -> some View {
-        Button { onOpen(path) } label: {
+    private func linkButton(_ label: String, _ raw: String) -> some View {
+        let path = MemoryBadgesBar.linkPath(raw)
+        return Button { onOpen(path) } label: {
             Text("\(label) \((path as NSString).lastPathComponent)")
                 .font(.caption).lineLimit(1).truncationMode(.middle)
                 .foregroundStyle(ThemeColor.link)
