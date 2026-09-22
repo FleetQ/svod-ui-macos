@@ -19,11 +19,18 @@ Rules:
    - facts that were measured or verified (versions, hosts, commands that work), with dates.
    Leave out step-by-step tool output, file listings, and chatter.
 6. Use dates (YYYY-MM-DD) taken from the session headers, not "yesterday" or "last week".
+   Every claim must come from the sessions or the current narrative. Never invent or "correct" a
+   version number, count, host or date; if the sessions disagree or are unclear, say so.
+   A session only knows what was true when it ran: something "pending" in an older session may be
+   done in a newer one. Prefer the newest session, and when you are unsure whether something is
+   still pending, write "as of <date of that session>".
 7. Never copy secrets: tokens, passwords, API keys, private keys, connection strings with
    credentials, `op://` references with values. If a session contains one, mention only that a
    credential was involved.
-8. End with a section `## Current state` of at most 8 bullet points.
+8. End with a section `## Current state (as of {{NEWEST}})` of at most 8 bullet points, where the date
+   is the newest session's date — not today's date.
 9. Keep the whole narrative under about 1500 words. When it grows past that, compress the oldest
    history into short bullets rather than dropping decisions.
 10. Write in {{LANGUAGE}}, unless the current narrative is already written in another language — then
-    keep that language.
+    keep that language. Use only that language's alphabet plus Latin for code, names and identifiers;
+    an answer with characters from any other script is thrown away.

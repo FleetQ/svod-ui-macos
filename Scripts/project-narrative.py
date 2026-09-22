@@ -41,6 +41,16 @@ PROMPT_FILE = ROOT / ".claude/hooks/project-narrative-prompt.md"
 JOB_MARKERS = ("RUNTIME CONTEXT (this run)", "SVOD-NARRATIVE-JOB")
 NOTE_DIR = "narratives"
 
+# Scripts a Bulgarian or English narrative never contains. Measured on the first real run (Haiku,
+# 2026-09-22): Chinese and Korean characters mid-sentence ("база知識", "两", "띠"). Same lesson as the
+# GraphRAG summaries — the language is checked in code, not trusted to the prompt.
+_FOREIGN_SCRIPT = re.compile(r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af\uf900-\ufaff]")
+# Letters Russian has and Bulgarian does not — the same run drifted into Russian words ("эта", "языци").
+_RUSSIAN_ONLY = re.compile(r"[ыэёЫЭЁ]")
+# A literal tag in the narrative is the NAME of the feature (Svod's own sessions discuss it), never
+# private content — that was stripped before the model saw anything. Left as a tag, an unclosed
+# `<private>` would make the engine hide the rest of the note from search, so it is rewritten.
+_PRIVATE_TAG = re.compile(r"<(/?)private\s*>", re.IGNORECASE)
 _PRIVATE = re.compile(r"<private>(?:.*?</private>|.*)", re.IGNORECASE | re.DOTALL)
 _FRONTMATTER = re.compile(r"\A---\n.*?\n---\n?", re.DOTALL)
 
@@ -48,8 +58,9 @@ _FRONTMATTER = re.compile(r"\A---\n.*?\n---\n?", re.DOTALL)
 # ---------------------------------------------------------------- pure helpers (tested directly)
 
 def slug(project):
-    """The engine's SessionNotes.slug: lowercase, every character that is not a letter or digit → '-'."""
-    s = "".join(c if c.isalnum() else "-" for c in (project or "").lower())
+    """The engine's SessionNotes.slug: lowercase, every character that is not a letter or digit → '-',
+    leading/trailing '-' trimmed, at most 40 characters."""
+    s = "".join(c if c.isalnum() else "-" for c in (project or "").lower()).strip("-")[:40]
     return s or "none"
 
 
@@ -118,7 +129,10 @@ def select_sessions(bodies, budget):
 
 
 def build_prompt(template, project, language, current_body, sessions):
-    parts = [template.replace("{{PROJECT}}", project).replace("{{LANGUAGE}}", language),
+    newest = max((m["endedAt"] for m, _ in sessions), default=0)
+    newest_day = dt.datetime.fromtimestamp(newest / 1000, dt.timezone.utc).strftime("%Y-%m-%d")
+    filled = template.replace("{{PROJECT}}", project).replace("{{LANGUAGE}}", language).replace("{{NEWEST}}", newest_day)
+    parts = [filled,
              "\n=== CURRENT NARRATIVE ===\n", current_body.strip() or "(none yet)",
              "\n\n=== NEW SESSIONS (oldest first) ===\n"]
     for meta, text in sessions:
@@ -127,14 +141,17 @@ def build_prompt(template, project, language, current_body, sessions):
     return "".join(parts)
 
 
-def valid_output(body, project):
-    """The model's answer is used only if it is a narrative for this project and carries no private text."""
-    b = body.strip()
+def valid_output(body, project, language="Bulgarian"):
+    """(narrative, None) when the answer is a narrative for this project in the expected script, else
+    (None, reason). A literal `<private>` tag is rewritten to `‹private›` (see _PRIVATE_TAG)."""
+    b = _PRIVATE_TAG.sub(lambda m: f"‹{m.group(1)}private›", body.strip())
     if not b.splitlines() or b.splitlines()[0].strip() != f"# {project} — narrative":
-        return None
-    if "<private>" in b.lower():
-        return None
-    return b + "\n"
+        return None, "first line is not the narrative heading"
+    if _FOREIGN_SCRIPT.search(b):
+        return None, "contains CJK/Hangul characters"
+    if language.lower() == "bulgarian" and _RUSSIAN_ONLY.search(b):
+        return None, "contains Russian-only letters"
+    return b + "\n", None
 
 
 def render_note(project, body, covered_until, sessions_folded, today):
@@ -238,7 +255,8 @@ def run_model(claude, model, prompt, timeout):
 
 def run(env, log):
     engine = Engine(env.get("SVOD_ENGINE", "http://127.0.0.1:7619"), env.get("SVOD_VAULT", "personal"))
-    model = env.get("NARRATIVE_MODEL", "claude-haiku-4-5")
+    # Sonnet, not Haiku: the first real run with Haiku mixed scripts and confused versions (2026-09-22).
+    model = env.get("NARRATIVE_MODEL", "sonnet")
     language = env.get("NARRATIVE_LANGUAGE", "Bulgarian")
     min_new = int(env.get("NARRATIVE_MIN_NEW", "2"))
     min_bytes = int(env.get("NARRATIVE_MIN_BYTES", "1000"))
@@ -246,6 +264,9 @@ def run(env, log):
     timeout = int(env.get("NARRATIVE_TIMEOUT", "600"))
     only = {p.strip() for p in env.get("NARRATIVE_PROJECTS", "").split(",") if p.strip()}
     dry = env.get("NARRATIVE_DRY_RUN") == "1"
+    # Rewrite from scratch: ignore the current narrative and `covered_until` (after a prompt or model
+    # change). The previous version stays in git history.
+    rebuild = env.get("NARRATIVE_REBUILD") == "1"
     today = env.get("NARRATIVE_TODAY") or dt.date.today().isoformat()
 
     if not engine.ready():
@@ -282,6 +303,8 @@ def run(env, log):
         fm, current_body = split_frontmatter(current or "")
         covered = int(fm.get("covered_until") or 0)
         folded_before = int(fm.get("sessions_folded") or 0)
+        if rebuild:
+            current_body, covered, folded_before = "", 0, 0
 
         new = sorted((m for m in by_project[project] if m["endedAt"] > covered), key=lambda m: -m["endedAt"])
         if len(new) < min_new:
@@ -315,9 +338,9 @@ def run(env, log):
             log(f"{project}: model failed ({err}); skip")
             outcome["projects"][project] = "model-failed"
             continue
-        body = valid_output(answer, project)
+        body, reason = valid_output(answer, project, language)
         if body is None:
-            log(f"{project}: model output rejected (no H1, fenced, or contains <private>); skip")
+            log(f"{project}: model output rejected ({reason}); skip")
             outcome["projects"][project] = "rejected"
             continue
 

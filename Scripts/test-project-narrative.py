@@ -115,6 +115,8 @@ if mode == "empty":
     print("")
 elif mode == "noh1":
     print("Here is the narrative you asked for.")
+elif mode == "cjk":
+    print(f"# {project} — narrative\n\nбаза知識")
 elif mode == "private":
     print(f"# {project} — narrative\n\nsecret <private>x</private>")
 else:
@@ -159,6 +161,8 @@ class NarrativeJobTest(unittest.TestCase):
         self.assertEqual(narrative.slug("svod-ui-macos"), "svod-ui-macos")
         self.assertEqual(narrative.slug("Площад"), "площад")
         self.assertEqual(narrative.slug(""), "none")
+        self.assertEqual(narrative.slug("/x/"), "x")
+        self.assertEqual(narrative.slug("gitlab.com/" + "a" * 60), ("gitlab-com-" + "a" * 60)[:40])
 
     def test_n2_private_spans_and_frontmatter_are_removed(self):
         self.assertEqual(narrative.strip_private("a <private>x</private> b <PRIVATE>y</Private> c"), "a  b  c")
@@ -195,11 +199,43 @@ class NarrativeJobTest(unittest.TestCase):
         self.assertIn("narratives/github-com-fleetq-svod-ui-macos.md", self.engine.files)
 
     def test_n9_output_validation(self):
-        self.assertIsNone(narrative.valid_output("", "p"))
-        self.assertIsNone(narrative.valid_output("Sure! # p — narrative", "p"))
-        self.assertIsNone(narrative.valid_output("# other — narrative\nx", "p"))
-        self.assertIsNone(narrative.valid_output("# p — narrative\n<private>x</private>", "p"))
-        self.assertEqual(narrative.valid_output("\n# p — narrative\nx\n\n", "p"), "# p — narrative\nx\n")
+        ok = lambda b, lang="Bulgarian": narrative.valid_output(b, "p", lang)[0]
+        self.assertIsNone(ok(""))
+        self.assertIsNone(ok("Sure! # p — narrative"))
+        self.assertIsNone(ok("# other — narrative\nx"))
+        self.assertEqual(ok("# p — narrative\nthe `<private>` tag and </Private >"),
+                         "# p — narrative\nthe `‹private›` tag and ‹/private›\n",
+                         "a literal tag is the feature's name; it is neutralised, not kept as a tag")
+        self.assertEqual(ok("\n# p — narrative\nx\n\n"), "# p — narrative\nx\n")
+
+    def test_script_drift_is_rejected_in_code(self):
+        """Measured on the first real run: CJK/Hangul mid-sentence and Russian-only letters."""
+        ok = lambda b, lang="Bulgarian": narrative.valid_output(b, "p", lang)[0]
+        self.assertIsNone(ok("# p — narrative\nперсонална база知識"))
+        self.assertIsNone(ok("# p — narrative\nобик띠 статус"))
+        self.assertIsNone(ok("# p — narrative\nна эта машина"))
+        self.assertIsNotNone(ok("# p — narrative\nна тази машина, ъгъл, Ъ, юли, щом, ѝ"))
+        self.assertIsNotNone(ok("# p — narrative\nна эта машина", "Russian"), "the Russian-letter rule is for Bulgarian only")
+
+    def test_a_literal_private_tag_in_the_answer_is_written_neutralised(self):
+        os.environ["FAKE_CLAUDE_MODE"] = "private"
+        self.seed(n=2)
+        out = self.run_job()
+        self.assertEqual(out["projects"]["svod-ui-macos"], "written: 2")
+        note = self.engine.files["narratives/svod-ui-macos.md"][0]
+        self.assertNotIn("<private>", note.lower())
+        self.assertIn("‹private›", note)
+
+    def test_rebuild_ignores_the_current_narrative_and_covered_until(self):
+        self.seed(n=3)
+        self.run_job()
+        out = self.run_job(NARRATIVE_REBUILD=1)
+        self.assertEqual(out["projects"]["svod-ui-macos"], "written: 3")
+        prompt = self.calls()[1]["prompt"]
+        self.assertIn("(none yet)", prompt)
+        fm, _ = narrative.split_frontmatter(self.engine.files["narratives/svod-ui-macos.md"][0])
+        self.assertEqual(fm["sessions_folded"], "3")
+        self.assertEqual(self.engine.puts[1][1]["expectedRevision"], "r1", "still guarded against a concurrent edit")
 
     # ------------------------------------------------------------------ the run
 
@@ -223,6 +259,8 @@ class NarrativeJobTest(unittest.TestCase):
         prompt = self.calls()[0]["prompt"]
         self.assertLess(prompt.index("task 0"), prompt.index("task 2"))
         self.assertIn("(none yet)", prompt)
+        self.assertIn("## Current state (as of 2026-09-23)", prompt, "dated by the newest session, not today")
+        self.assertNotIn("{{", prompt)
 
     def test_n4_second_run_without_new_sessions_does_nothing(self):
         self.seed(n=3)
@@ -287,7 +325,7 @@ class NarrativeJobTest(unittest.TestCase):
         self.assertEqual(self.calls(), [])
 
     def test_n9_bad_model_output_writes_nothing(self):
-        for mode in ("empty", "noh1", "private", "fail"):
+        for mode in ("empty", "noh1", "cjk", "fail"):
             with self.subTest(mode=mode):
                 os.environ["FAKE_CLAUDE_MODE"] = mode
                 self.engine.puts.clear()
@@ -303,7 +341,7 @@ class NarrativeJobTest(unittest.TestCase):
         argv = call["argv"]
         self.assertEqual(argv[argv.index("--tools") + 1], "")
         self.assertIn("-p", argv)
-        self.assertEqual(argv[argv.index("--model") + 1], "claude-haiku-4-5")
+        self.assertEqual(argv[argv.index("--model") + 1], "sonnet")
         self.assertEqual(call["capture"], "off")
 
     def test_n11_dry_run_neither_calls_the_model_nor_writes(self):
