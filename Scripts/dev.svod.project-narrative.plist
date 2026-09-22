@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Svod weekly per-project narrative (Scripts/project-narrative.py), Sundays 03:00.
+
+  NOT loaded automatically. It runs `claude -p` once per project with new sessions, unattended,
+  and writes notes into your Svod vault — enabling it is a deliberate opt-in. Try it first:
+
+    NARRATIVE_DRY_RUN=1 /usr/bin/python3 Scripts/project-narrative.py
+
+  To enable:
+
+    cp Scripts/dev.svod.project-narrative.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.svod.project-narrative.plist
+
+  To disable:
+
+    launchctl bootout gui/$(id -u)/dev.svod.project-narrative
+    rm ~/Library/LaunchAgents/dev.svod.project-narrative.plist
+
+  Weekly on purpose: every merge by a model loses some detail, so running it more often makes the
+  narratives worse, not fresher.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>dev.svod.project-narrative</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/python3</string>
+    <string>/Users/katsarov/htdocs/svod-ui-macos/Scripts/project-narrative.py</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Weekday</key><integer>0</integer>
+    <key>Hour</key><integer>3</integer>
+    <key>Minute</key><integer>0</integer>
+  </dict>
+  <key>ProcessType</key><string>Background</string>
+  <key>StandardOutPath</key><string>/Users/katsarov/Library/Logs/svod/project-narrative.out.log</string>
+  <key>StandardErrorPath</key><string>/Users/katsarov/Library/Logs/svod/project-narrative.err.log</string>
+</dict>
+</plist>

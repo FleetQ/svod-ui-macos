@@ -109,7 +109,8 @@ mkdir -p "$WORK/notes"
 # Time-boxed. A nightly job that can hang forever is worse than one that fails: launchd would keep
 # the slot occupied and the next night's run would never start. `timeout` is not on stock macOS, so
 # this is a plain watchdog.
-"$CLAUDE_BIN" -p "$PROMPT_TEXT" --model "$MODEL" --permission-mode acceptEdits >>"$LOG" 2>&1 &
+# SVOD_CAPTURE=off: the capture hook must not record this run as a session (see capture-session.sh).
+SVOD_CAPTURE=off "$CLAUDE_BIN" -p "$PROMPT_TEXT" --model "$MODEL" --permission-mode acceptEdits >>"$LOG" 2>&1 &
 CLAUDE_PID=$!
 ( sleep "${RECALL_DISTILL_TIMEOUT:-1800}"; kill -TERM "$CLAUDE_PID" 2>/dev/null ) &
 WATCHDOG=$!
