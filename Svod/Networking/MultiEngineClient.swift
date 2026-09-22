@@ -216,28 +216,26 @@ public final class MultiEngineClient: SvodClient, @unchecked Sendable {
         let localResult: Result<[Vault], Error>
         do { localResult = .success(try await local.vaults().vaults) } catch { localResult = .failure(error) }
         let remotes = remoteList
-        let results: [(Remote, Result<[Vault], Error>)] = await withTaskGroup(of: (Remote, Result<[Vault], Error>).self) { group in
+        // Children return only the profile id and the vaults (nil = that engine did not answer).
+        // They used to return `(Remote, Result<[Vault], Error>)`: in an optimized (-O) build the group
+        // then yielded nothing although every request answered 200, so central vaults vanished and the
+        // profile showed "0 vaults" with no "unreachable". Debug builds and tests never saw it.
+        let answers: [String: [Vault]?] = await withTaskGroup(of: (String, [Vault]?).self) { group in
             for r in remotes {
-                group.addTask {
-                    do { return (r, .success(try await r.client.vaults().vaults)) }
-                    catch { return (r, .failure(error)) }
-                }
+                let client = r.client, id = r.id
+                group.addTask { (id, try? await client.vaults().vaults) }
             }
-            var collected: [(Remote, Result<[Vault], Error>)] = []
-            for await item in group { collected.append(item) }
-            return collected.sorted { $0.0.name < $1.0.name }
+            var collected: [String: [Vault]?] = [:]
+            for await (id, vs) in group { collected[id] = vs }
+            return collected
         }
         var remoteVaults: [Vault] = []
         var down = Set<String>()
         var defaults: [String: String] = [:]
-        for (r, result) in results {
-            switch result {
-            case .success(let vs):
-                defaults[r.id] = vs.first(where: \.isDefault)?.id ?? vs.first?.id
-                remoteVaults += vs.map { rekey($0, r) }
-            case .failure:
-                down.insert(r.id)
-            }
+        for r in remotes {
+            guard let answer = answers[r.id], let vs = answer else { down.insert(r.id); continue }
+            defaults[r.id] = vs.first(where: \.isDefault)?.id ?? vs.first?.id
+            remoteVaults += vs.map { rekey($0, r) }
         }
         lock.lock(); defer { lock.unlock() }
         unreachable = down; remoteDefaults = defaults
@@ -250,7 +248,7 @@ public final class MultiEngineClient: SvodClient, @unchecked Sendable {
             localVaults = vs
             lastLocalVaults = vs
         case .failure(let error):
-            if down.count == results.count { throw error }
+            if down.count == remotes.count { throw error }
             localVaults = lastLocalVaults
         }
         localDefault = localVaults.first(where: \.isDefault)?.id ?? localVaults.first?.id
