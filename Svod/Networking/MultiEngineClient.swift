@@ -33,6 +33,8 @@ public final class MultiEngineClient: SvodClient, @unchecked Sendable {
     private var remoteDefaults: [String: String] = [:]
     /// The local engine's default vault id (same source) — an untagged local event means this vault.
     private var localDefault: String?
+    /// The local engine's last vault list, shown while it is down or restarting.
+    private var lastLocalVaults: [Vault] = []
     private var current: SvodClient
     private var activeKey: String?
     /// Profiles whose engine did not answer the last `vaults()` (shown in Settings).
@@ -211,7 +213,8 @@ public final class MultiEngineClient: SvodClient, @unchecked Sendable {
     /// not one per engine, and the vault list (which launch and every reconnect wait on) is never
     /// held up by a dead central engine longer than by one.
     public func vaults() async throws -> Vaults {
-        let localVaults = try await local.vaults().vaults
+        let localResult: Result<[Vault], Error>
+        do { localResult = .success(try await local.vaults().vaults) } catch { localResult = .failure(error) }
         let remotes = remoteList
         let results: [(Remote, Result<[Vault], Error>)] = await withTaskGroup(of: (Remote, Result<[Vault], Error>).self) { group in
             for r in remotes {
@@ -224,23 +227,34 @@ public final class MultiEngineClient: SvodClient, @unchecked Sendable {
             for await item in group { collected.append(item) }
             return collected.sorted { $0.0.name < $1.0.name }
         }
-        var out = localVaults
+        var remoteVaults: [Vault] = []
         var down = Set<String>()
         var defaults: [String: String] = [:]
         for (r, result) in results {
             switch result {
             case .success(let vs):
                 defaults[r.id] = vs.first(where: \.isDefault)?.id ?? vs.first?.id
-                out += vs.map { rekey($0, r) }
+                remoteVaults += vs.map { rekey($0, r) }
             case .failure:
                 down.insert(r.id)
             }
         }
-        lock.lock()
+        lock.lock(); defer { lock.unlock() }
         unreachable = down; remoteDefaults = defaults
+        // A local engine that is down or restarting used to throw here before any central result
+        // was read: the central profile showed "0 vaults" and its vaults were missing from the
+        // switcher. Keep its last list instead; fail only when no engine answered at all.
+        let localVaults: [Vault]
+        switch localResult {
+        case .success(let vs):
+            localVaults = vs
+            lastLocalVaults = vs
+        case .failure(let error):
+            if down.count == results.count { throw error }
+            localVaults = lastLocalVaults
+        }
         localDefault = localVaults.first(where: \.isDefault)?.id ?? localVaults.first?.id
-        lock.unlock()
-        return Vaults(vaults: out)
+        return Vaults(vaults: localVaults + remoteVaults)
     }
 
     /// A vault created from this Mac is created on THIS Mac's engine: the sheet takes a local

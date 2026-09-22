@@ -7,7 +7,7 @@ final class MultiEngineClientTests: XCTestCase {
     /// A mock that knows which engine it is: distinct vault ids, records what it served.
     final class EngineMock: MockSvodClient, @unchecked Sendable {
         let tag: String
-        let down: Bool
+        var down: Bool
         var served: [String] = []
         /// A live socket never ends; the mock's does at once unless a test keeps it open.
         var eventsStayOpen = false
@@ -112,6 +112,46 @@ final class MultiEngineClientTests: XCTestCase {
         let vs = try await router.vaults().vaults
         XCTAssertEqual(vs.map(\.id), ["local-main", "local-docs"])
         XCTAssertEqual(router.unreachable, ["central"])
+    }
+
+    /// The laptop bug: Settings showed the central profile grey with "0 vaults" and the switcher had
+    /// no central group, although the engine answered. `vaults()` asked the LOCAL engine first with
+    /// `try`, so a local engine that was down threw before any central result was read.
+    func testADeadLocalEngineDoesNotHideCentralVaults() async throws {
+        let local = EngineMock(tag: "local", down: true)
+        let remote = EngineMock(tag: "remote")
+        let router = MultiEngineClient(local: local, remotes: [.init(id: "central", name: "Company", client: remote)])
+        let vs = try await router.vaults().vaults
+        XCTAssertEqual(vs.map(\.id), ["remote-main@central", "remote-docs@central"])
+        XCTAssertTrue(router.unreachable.isEmpty)
+    }
+
+    /// A local engine that restarts must not make its vaults vanish (the app would switch away from
+    /// the open vault): the last list it gave is kept until it answers again.
+    func testALocalRestartKeepsTheLastLocalListNextToCentralVaults() async throws {
+        let (router, local, _) = make()
+        _ = try await router.vaults()
+        local.down = true
+        let vs = try await router.vaults().vaults
+        XCTAssertEqual(vs.map(\.id), ["local-main", "local-docs", "remote-main@central", "remote-docs@central"])
+    }
+
+    func testWithEveryEngineDownTheListStillFailsOffline() async throws {
+        let local = EngineMock(tag: "local", down: true)
+        let remote = EngineMock(tag: "remote", down: true)
+        let router = MultiEngineClient(local: local, remotes: [.init(id: "central", name: "Company", client: remote)])
+        do { _ = try await router.vaults(); XCTFail("must fail") }
+        catch let e as SvodClientError { XCTAssertTrue(e.isOffline) }
+        XCTAssertEqual(router.unreachable, ["central"])
+    }
+
+    /// The exact body memory.socialscore.io (engine 1.25.0) returns for a personal key.
+    func testCentralVaultListFromTheRealServerDecodes() throws {
+        let body = #"{"vaults":[{"id":"socialscore","name":"SocialScore","default":true,"role":"admin"}]}"#
+        let vs = try JSONDecoder().decode(Vaults.self, from: Data(body.utf8)).vaults
+        XCTAssertEqual(vs.map(\.id), ["socialscore"])
+        XCTAssertEqual(vs.first?.isDefault, true)
+        XCTAssertEqual(vs.first?.role, "admin")
     }
 
     func testActiveVaultKeyRoutesCallsToThatEngine() async throws {
