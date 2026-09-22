@@ -22,6 +22,12 @@
 # no-ops silently when the engine is down. Scope: every project — Scripts/install-claude-hooks.sh wires
 # it in ~/.claude/settings.json, and each session is labelled with its own project (below).
 
+# SVOD_CAPTURE=off: our own headless jobs (recall-distill.sh, project-narrative.py) export it for the
+# `claude -p` they start. Claude Code passes its environment to hooks, so those runs are not captured.
+# Without this the distiller was recorded as a session (19 of 372 on 2026-09-22) and a job that reads
+# sessions would read its own previous runs.
+[ "${SVOD_CAPTURE:-}" = "off" ] && exit 0
+
 ENGINE="${SVOD_ENGINE_URL:-http://127.0.0.1:7619}"
 STATE_DIR="${SVOD_CAPTURE_STATE_DIR:-${TMPDIR:-/tmp}/svod-capture}"
 

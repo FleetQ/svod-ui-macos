@@ -32,6 +32,7 @@ struct CommandPaletteView: View {
             Divider().overlay(ThemeColor.separator)
             filtersSection
             Divider().overlay(ThemeColor.separator)
+            degradedNotice
             resultsSection
             footer
         }
@@ -101,6 +102,19 @@ struct CommandPaletteView: View {
         SearchFiltersBar(model: model)
             .padding(.horizontal, Spacing.lg)
             .padding(.vertical, Spacing.sm)
+    }
+
+    // Shown with results AND with "No matches": a miss on a keyword-only search is weak evidence.
+    @ViewBuilder private var degradedNotice: some View {
+        if model.errorMessage == nil, let notice = model.degradedNotice {
+            Label(notice, systemImage: "exclamationmark.triangle")
+                .font(Typography.caption)
+                .foregroundStyle(ThemeColor.warning)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, Spacing.lg)
+                .padding(.vertical, Spacing.xs)
+                .accessibilityLabel(notice)
+        }
     }
 
     // MARK: results
@@ -273,6 +287,15 @@ private struct KeyHint: View {
                            .init(tag: "index", count: 5), .init(tag: "agents", count: 6)]
         m.filterTags = ["index"]
         m.pathPrefix = "vault/adr"
+    }
+}
+
+#Preview("Degraded – keyword only") {
+    palette { m in
+        m.query = "embeddings"
+        m.results = MockSvodClient.hits(for: "index")
+        m.degraded = ["semantic"]
+        m.hasSearched = true
     }
 }
 

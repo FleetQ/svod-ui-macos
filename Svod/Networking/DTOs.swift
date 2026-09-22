@@ -161,7 +161,21 @@ public struct MemoryFilter: Hashable, Sendable {
 public struct SearchResult: Codable, Hashable, Sendable {
     public var mode: String              // response enum is UPPERCASE: HYBRID/KEYWORD/SEMANTIC
     public var hits: [SearchHit]
-    public init(mode: String, hits: [SearchHit]) { self.mode = mode; self.hits = hits }
+    /// Retrieval steps the engine had to skip for this result: "semantic" (query embed failed or
+    /// semantic suppressed — hits are keyword-only) and/or "rerank" (contract 0.34.0). Empty when the
+    /// result is complete, and on an older engine that does not send the field.
+    public var degraded: [String]
+    public init(mode: String, hits: [SearchHit], degraded: [String] = []) {
+        self.mode = mode; self.hits = hits; self.degraded = degraded
+    }
+
+    enum CodingKeys: String, CodingKey { case mode, hits, degraded }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        mode = try c.decode(String.self, forKey: .mode)
+        hits = try c.decode([SearchHit].self, forKey: .hits)
+        degraded = try c.decodeIfPresent([String].self, forKey: .degraded) ?? []
+    }
 }
 
 public struct SearchHit: Codable, Hashable, Sendable, Identifiable {

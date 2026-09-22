@@ -8,6 +8,7 @@ H2  session-start-rulebook.sh: silent when the engine is down or slow, one notic
     a bounded block that vault text cannot close.
 H3  install-claude-hooks.sh: idempotent, backs up, leaves other hooks alone, uninstalls exactly
     its own entries.
+H4  capture-session.sh posts nothing when SVOD_CAPTURE=off (our own headless jobs).
 
 Everything runs against temp directories, a fake HOME and a local HTTP server; nothing touches
 the real ~/.claude or a real engine.
@@ -147,6 +148,16 @@ class CaptureProjectTests(unittest.TestCase):
     def test_without_cwd_the_project_dir_is_used(self):
         body = self.capture(project_dir=self.repo("fromenv", "git@github.com:Me/From-Env.git"))
         self.assertEqual(body["project"], "github.com/me/from-env")
+
+    def test_capture_off_posts_nothing(self):
+        """H4: our own headless jobs export SVOD_CAPTURE=off so their runs are not recorded as sessions."""
+        payload = {"session_id": "job", "transcript_path": str(self.transcript), "hook_event_name": "SessionEnd",
+                   "cwd": str(self.repo("job", "git@github.com:Me/Job.git"))}
+        env = {"SVOD_ENGINE_URL": self.engine.url, "SVOD_CAPTURE_STATE_DIR": str(self.tmp / "state"),
+               "HOME": str(self.tmp), "SVOD_CAPTURE": "off"}
+        r = run(CAPTURE, json.dumps(payload), env)
+        self.assertEqual((r.returncode, r.stdout), (0, ""))
+        self.assertEqual(self.engine.requests, [], "no capture POST while SVOD_CAPTURE=off")
 
     def test_engine_down_still_exits_zero(self):
         payload = {"session_id": "s1", "transcript_path": str(self.transcript), "hook_event_name": "Stop",

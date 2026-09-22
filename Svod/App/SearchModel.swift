@@ -12,6 +12,9 @@ public final class SearchModel: ObservableObject {
     @Published public var query: String = ""
     @Published public var mode: SearchMode = .hybrid
     @Published public var results: [SearchHit] = []
+    /// Retrieval steps the engine skipped for the current results ("semantic", "rerank"); see
+    /// `SearchResult.degraded`. Empty for a complete result.
+    @Published public var degraded: [String] = []
     @Published public var isSearching = false
     @Published public var errorMessage: String?
     @Published public var selectedIndex: Int = 0
@@ -81,7 +84,7 @@ public final class SearchModel: ObservableObject {
         debounceTask?.cancel()
         let (scope, term) = Self.splitInlineScope(query)
         guard !term.isEmpty || scope != nil || hasActiveFilters else {
-            isSearching = false; results = []; hasSearched = false; errorMessage = nil; return
+            isSearching = false; results = []; degraded = []; hasSearched = false; errorMessage = nil; return
         }
         debounceTask = Task { [weak self] in
             try? await Task.sleep(for: debounce)
@@ -94,7 +97,7 @@ public final class SearchModel: ObservableObject {
         let (scope, term) = Self.splitInlineScope(query)
         let effectivePrefix = scope ?? pathPrefix
         guard !term.isEmpty || effectivePrefix != nil || hasActiveFilters else {
-            results = []; hasSearched = false; return
+            results = []; degraded = []; hasSearched = false; return
         }
         isSearching = true; errorMessage = nil
         defer { isSearching = false; hasSearched = true }
@@ -122,13 +125,25 @@ public final class SearchModel: ObservableObject {
             // times (very visible when browsing by tag). Collapse to one row per note,
             // keeping the best-scoring hit.
             self.results = Self.collapsedByNote(r.hits)
+            self.degraded = r.degraded
             self.selectedIndex = 0
         } catch let e as SvodClientError {
             guard !Task.isCancelled else { return }   // superseded by a newer search
-            self.errorMessage = e.errorDescription; self.results = []
+            self.errorMessage = e.errorDescription; self.results = []; self.degraded = []
         } catch {
             guard !Task.isCancelled else { return }   // superseded by a newer search
-            self.errorMessage = error.localizedDescription; self.results = []
+            self.errorMessage = error.localizedDescription; self.results = []; self.degraded = []
+        }
+    }
+
+    /// One line explaining a degraded result, nil when the result is complete.
+    public var degradedNotice: String? {
+        let semantic = degraded.contains("semantic"), rerank = degraded.contains("rerank")
+        switch (semantic, rerank) {
+        case (true, true): return "Semantic search and reranking are unavailable — keyword results only."
+        case (true, false): return "Semantic search is unavailable — keyword results only."
+        case (false, true): return "Reranking is unavailable — results are not reranked."
+        default: return nil
         }
     }
 
