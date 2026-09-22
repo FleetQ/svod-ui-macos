@@ -136,11 +136,12 @@ public final class SearchModel: ObservableObject {
         }
     }
 
-    /// One line explaining a degraded result, nil when the result is complete. Worded by mode: without
-    /// semantic search a Hybrid search still has keyword hits, a Semantic search has none.
+    /// One line explaining a degraded result, nil when the result is complete. Without semantic search
+    /// any hits come from keyword search; a Semantic search whose query embed failed has none (during a
+    /// model rebuild it still shows keyword hits), so "nothing to show" depends on the results.
     public var degradedNotice: String? {
         let semantic = degraded.contains("semantic"), rerank = degraded.contains("rerank")
-        if semantic && mode == .semantic {
+        if semantic && mode == .semantic && results.isEmpty {
             return "Semantic search is unavailable — nothing to show in Semantic mode. Switch to Hybrid or Keyword."
         }
         switch (semantic, rerank) {

@@ -37,7 +37,12 @@ final class SearchDegradedTests: XCTestCase {
         m.degraded = ["semantic"]
         XCTAssertEqual(m.degradedNotice,
                        "Semantic search is unavailable — nothing to show in Semantic mode. Switch to Hybrid or Keyword.",
-                       "semantic mode has no keyword fallback, so it must not claim keyword results")
+                       "a failed query embed in Semantic mode returns no hits")
+        m.results = [SearchHit(path: "a.md", heading: "A", snippet: "x", score: 1, matchedKeyword: true,
+                               matchedSemantic: false, tags: [])]
+        XCTAssertEqual(m.degradedNotice, "Semantic search is unavailable — keyword results only.",
+                       "during a model rebuild Semantic mode shows keyword hits; the notice must not say there are none")
+        m.results = []
         m.mode = .hybrid
         m.degraded = ["something-new"]
         XCTAssertNil(m.degradedNotice, "an unknown value from a newer engine shows nothing rather than a wrong claim")
