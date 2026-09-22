@@ -11,6 +11,7 @@ struct UpdatesSettingsView: View {
 
     @State private var check: UpdateCheck?
     @State private var engineUnavailable = false
+    @State private var scriptMissing: String?
     @State private var busy = false
     @State private var statusMsg: String?
 
@@ -73,6 +74,7 @@ struct UpdatesSettingsView: View {
                     }
                     Button(busy ? "Updating…" : "Update engine") { Task { await apply() } }
                         .disabled(busy || !c.compatible)
+                    if let scriptMissing { setupNote(scriptMissing) }
                 } else {
                     Label("Up to date.", systemImage: "checkmark.circle").foregroundStyle(.secondary)
                 }
@@ -84,6 +86,30 @@ struct UpdatesSettingsView: View {
                 ProgressView().controlSize(.small)
             }
         }
+    }
+
+    static let setupCommand = """
+        mkdir -p ~/.config/svod && curl -fsSL -o ~/.config/svod/self-update.sh \\
+          https://github.com/FleetQ/svod-engine/releases/latest/download/self-update.sh \\
+          && bash ~/.config/svod/self-update.sh
+        """
+
+    @ViewBuilder private func setupNote(_ engineMessage: String) -> some View {
+        Label("The engine has no update script installed.", systemImage: "exclamationmark.triangle")
+            .font(.callout).foregroundStyle(.orange)
+        Text("Run this once in Terminal. It installs the latest engine and the script, and after that “Update engine” works from here.")
+            .font(.callout).foregroundStyle(.secondary)
+        Text(Self.setupCommand)
+            .font(.system(.caption, design: .monospaced))
+            .textSelection(.enabled)
+        HStack {
+            Button("Copy command") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(Self.setupCommand, forType: .string)
+            }
+            Spacer()
+        }
+        Text("Engine said: \(engineMessage)").font(.caption).foregroundStyle(.tertiary)
     }
 
     // MARK: actions
@@ -102,14 +128,17 @@ struct UpdatesSettingsView: View {
     private func apply() async {
         busy = true; defer { busy = false }
         statusMsg = nil
+        scriptMissing = nil
         do {
             let r = try await client.updateApply()
             if r.started {
-                statusMsg = "Update started — the engine will download, swap and restart. It will reconnect automatically in a few seconds."
+                statusMsg = "Update started. The engine downloads the new version (about 200 MB), swaps it in and restarts, which takes a minute or two; the app reconnects on its own. Progress is logged to ~/.config/svod/self-update.log."
             }
-        } catch let e as SvodClientError where e.isNotImplemented { engineUnavailable = true }
-        catch let e as SvodClientError {
+        } catch let e as SvodClientError {
             switch e {
+            // The check above already answered, so the endpoints exist: a 501 from apply means the
+            // engine found no update script, not that it predates self-update.
+            case .notImplemented(let m): scriptMissing = m ?? "update is not available"
             case .http(409, _): statusMsg = "No compatible update to apply right now."
             default: statusMsg = e.errorDescription
             }
