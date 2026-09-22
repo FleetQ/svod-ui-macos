@@ -33,6 +33,12 @@ final class SearchDegradedTests: XCTestCase {
         XCTAssertEqual(m.degradedNotice, "Reranking is unavailable — results are not reranked.")
         m.degraded = ["semantic", "rerank"]
         XCTAssertEqual(m.degradedNotice, "Semantic search and reranking are unavailable — keyword results only.")
+        m.mode = .semantic
+        m.degraded = ["semantic"]
+        XCTAssertEqual(m.degradedNotice,
+                       "Semantic search is unavailable — nothing to show in Semantic mode. Switch to Hybrid or Keyword.",
+                       "semantic mode has no keyword fallback, so it must not claim keyword results")
+        m.mode = .hybrid
         m.degraded = ["something-new"]
         XCTAssertNil(m.degradedNotice, "an unknown value from a newer engine shows nothing rather than a wrong claim")
     }

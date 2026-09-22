@@ -105,7 +105,8 @@ import json, os, sys
 d = os.environ["FAKE_CLAUDE_DIR"]
 prompt = sys.stdin.read()
 n = len(os.listdir(d))
-json.dump({"argv": sys.argv[1:], "capture": os.environ.get("SVOD_CAPTURE"), "prompt": prompt},
+json.dump({"argv": sys.argv[1:], "capture": os.environ.get("SVOD_CAPTURE"), "prompt": prompt,
+           "cwd": os.getcwd(), "cwd_entries": os.listdir(os.getcwd())},
           open(os.path.join(d, f"call{n}.json"), "w"))
 mode = os.environ.get("FAKE_CLAUDE_MODE", "ok")
 project = prompt.split("# ", 1)[1].split(" — narrative", 1)[0] if "# " in prompt else "?"
@@ -297,6 +298,16 @@ class NarrativeJobTest(unittest.TestCase):
         self.assertNotIn("RUNTIME CONTEXT (this run) ---\nWORK_DIR", prompt)
         self.assertEqual(prompt.count("--- session "), 2)
 
+    def test_a_session_marked_private_is_skipped_whole(self):
+        self.seed(n=2)
+        path = "messy/sessions/1790000000500-svod-ui-macos-privsess.md"
+        self.engine.files[path] = ("---\ntype: session\nproject: svod-ui-macos\nprivate: true\nendedAt: 1790000000500\n---\n"
+                                   "user: WHOLE-NOTE-SECRET", "p1")
+        self.engine.sessions.append({"path": path, "project": "svod-ui-macos", "sessionId": "privsess",
+                                     "startedAt": 1790000000000, "endedAt": 1790000000500, "bytes": 30, "distilled": False})
+        self.run_job()
+        self.assertNotIn("WHOLE-NOTE-SECRET", self.calls()[0]["prompt"])
+
     def test_private_text_never_reaches_the_model(self):
         self.engine.add_session("p", "a1", 1_790_000_000_000, "public <private>TOKEN-123</private> text")
         self.engine.add_session("p", "a2", 1_790_000_000_000 + DAY, "more <private>left open TOKEN-456")
@@ -340,6 +351,10 @@ class NarrativeJobTest(unittest.TestCase):
         call = self.calls()[0]
         argv = call["argv"]
         self.assertEqual(argv[argv.index("--tools") + 1], "")
+        self.assertEqual(argv[argv.index("--setting-sources") + 1], "", "no user/project settings ⇒ no hooks")
+        self.assertIn("--system-prompt", argv)
+        self.assertNotEqual(os.path.realpath(call["cwd"]), os.path.realpath(str(ROOT)), "not run from the repo")
+        self.assertEqual(call["cwd_entries"], [], "an empty cwd: no CLAUDE.md, no git repo")
         self.assertIn("-p", argv)
         self.assertEqual(argv[argv.index("--model") + 1], "sonnet")
         self.assertEqual(call["capture"], "off")

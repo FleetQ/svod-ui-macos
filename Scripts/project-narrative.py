@@ -9,11 +9,14 @@ read. Design: svod-engine `docs/design-evermind-borrow.md`.
     NARRATIVE_DRY_RUN=1 python3 Scripts/project-narrative.py   # print the plan, no model, no write
 
 How it stays safe to run unattended:
-  * The engine stays LLM-free. This script does the HTTP; `claude -p` only turns text into text
-    (`--tools ""`): no file access, no network, nothing for a PreToolUse hook to intercept.
+  * The engine stays LLM-free. This script does the HTTP; `claude -p` gets no tools (`--tools ""`), no
+    settings or hooks (`--setting-sources ""`), its own system prompt, and an empty temporary cwd — so
+    no CLAUDE.md, auto-memory, git status or rule-book hook reaches the model. Run from the repo, the
+    first real run's note cited a commit hash that exists in no session, only in the repo's git log.
   * `SVOD_CAPTURE=off` for the model run, so the capture hook does not record it as a session.
-  * `<private>` spans are removed before the model sees a session. The sessions are out of search;
-    the narrative is in it, so this is where private text could otherwise leak.
+  * `<private>` spans are removed before the model sees a session, and a session note marked
+    `private: true` is skipped whole. The sessions are out of search; the narrative is in it, so this is
+    where private text could otherwise leak.
   * The note is written with `PUT /api/v1/file`: the engine's secret scanner applies (422 ⇒ skipped)
     and every update is a git commit, which is the audit trail and the undo.
   * Incremental: the note records `covered_until`; only sessions that ended later are sent, together
@@ -28,6 +31,7 @@ import re
 import signal
 import subprocess
 import sys
+import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -96,6 +100,11 @@ def canonical_projects(labels):
         matches = [r for r in remote if r.rsplit("/", 1)[-1].lower() == label.lower()]
         out[label] = matches[0] if len(matches) == 1 else label
     return out
+
+
+def is_private_note(fm):
+    """`private: true` in the frontmatter — the engine's MarkdownChunker.isPrivate truth values."""
+    return str(fm.get("private", "")).strip().lower() in ("true", "yes", "1", "on")
 
 
 def is_job_run(body):
@@ -234,14 +243,22 @@ def find_claude(env):
     return which("claude")
 
 
+SYSTEM_PROMPT = "You turn Claude Code session transcripts into a project narrative, following the user's rules exactly."
+
+
+def model_argv(claude, model):
+    return [claude, "-p", "--model", model, "--tools", "", "--setting-sources", "", "--system-prompt", SYSTEM_PROMPT,
+            "--no-session-persistence", "--output-format", "text"]
+
+
 def run_model(claude, model, prompt, timeout):
-    """stdin → stdout, no tools, not captured. Returns the text, or None on failure/timeout."""
+    """stdin → stdout. Returns (text, None) or (None, reason). Isolated as described in the module docstring;
+    SVOD_CAPTURE=off stays as a second guard in case user hooks ever load."""
     env = {**os.environ, "SVOD_CAPTURE": "off"}
     try:
-        p = subprocess.run(
-            [claude, "-p", "--model", model, "--tools", "", "--no-session-persistence", "--output-format", "text"],
-            input=prompt, capture_output=True, text=True, timeout=timeout, env=env, cwd=str(ROOT),
-        )
+        with tempfile.TemporaryDirectory(prefix="svod-narrative-") as cwd:
+            p = subprocess.run(model_argv(claude, model), input=prompt, capture_output=True, text=True,
+                               timeout=timeout, env=env, cwd=cwd)
     except subprocess.TimeoutExpired:
         return None, "timed out"
     except OSError as e:
@@ -316,8 +333,8 @@ def run(env, log):
                 st, text, _ = engine.read(m["path"])
                 if st != 200:
                     continue
-                _, body = split_frontmatter(text)
-                if is_job_run(body):
+                fm, body = split_frontmatter(text)
+                if is_private_note(fm) or is_job_run(body):
                     continue
                 yield m, strip_private(body)
 
