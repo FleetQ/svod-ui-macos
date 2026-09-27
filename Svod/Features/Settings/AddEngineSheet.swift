@@ -68,6 +68,7 @@ struct AddEngineSheet: View {
             case .http(401, _): testResult = "Key not accepted."
             case .notImplemented, .notFound: testResult = "That engine is older than contract 0.30.0."
             case .offline: testResult = "Unreachable."
+            case .timedOut: testResult = "No answer in time. The engine may be busy, or the address unreachable."
             default: testResult = e.errorDescription
             }
         } catch {

@@ -311,6 +311,7 @@ public enum SvodClientError: Error, LocalizedError, Sendable {
     case badRequest(String?)
     case http(status: Int, message: String?)
     case offline                       // could not reach the engine at all
+    case timedOut                      // no answer within the request timeout — the engine may still be working
     case notImplemented(String?)       // 501 — engine doesn't support this yet
     case decoding(String)
     case transport(String)
@@ -323,6 +324,7 @@ public enum SvodClientError: Error, LocalizedError, Sendable {
         case .badRequest(let m):      return m ?? "Bad request."
         case .http(let s, let m):     return m ?? "Server error (\(s))."
         case .offline:                return "The Svod engine is not reachable."
+        case .timedOut:               return "The engine did not answer in time. It may still be working (sync or indexing). Try again in a moment."
         case .notImplemented(let m):  return m ?? "The engine doesn't support this yet."
         case .decoding(let m):        return "Couldn't read the engine's response. \(m)"
         case .transport(let m):       return m
@@ -333,6 +335,12 @@ public enum SvodClientError: Error, LocalizedError, Sendable {
     /// True when the failure means "engine is down", so UI can drop to offline state.
     public var isOffline: Bool {
         if case .offline = self { return true }
+        return false
+    }
+
+    /// A request that ran out of time. Not "engine down": keep the connected state.
+    public var isTimedOut: Bool {
+        if case .timedOut = self { return true }
         return false
     }
 
