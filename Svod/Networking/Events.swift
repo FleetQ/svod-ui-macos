@@ -16,6 +16,9 @@ public enum EventType: String, Codable, Hashable, Sendable {
     case agentActivity = "agent.activity"
     case sourceSynced  = "source.synced"     // a source's auto-sync watcher ran (0.13.0)
     case indexProgress = "index.progress"    // background embedding progress (0.13.0)
+    case syncStarted   = "sync.started"      // two-way sync cycle began (0.35.0)
+    case syncProgress  = "sync.progress"     // cycle entered a phase: commit | fetch | merge | push
+    case syncFinished  = "sync.finished"     // cycle ended: status inSync | conflicts | offline | error
     case unknown
 
     public init(from decoder: Decoder) throws {
@@ -39,6 +42,13 @@ public struct EventPayload: Codable, Hashable, Sendable {
     /// Vault id this event belongs to (engine v0.3.0 multi-vault). The contract
     /// leaves `data` freeform, so this is best-effort: nil means default/unknown.
     public var vault: String?
+    // sync.* events (contract 0.35.0).
+    public var trigger: String?     // startup | poll | on-change | manual
+    public var phase: String?
+    public var status: String?
+    public var head: String?
+    public var conflicts: Int?      // also on source.synced
+    public var pending: Bool?       // sync.finished: a trailing cycle follows
 
     /// Best-effort author identity for display, mirroring the reference viewer:
     /// agentId → author → "external" (watcher) → "ui".

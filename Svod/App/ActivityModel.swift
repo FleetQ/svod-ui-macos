@@ -59,7 +59,7 @@ public final class ActivityModel: ObservableObject {
                 feed.insert(event, at: 0)
                 if feed.count > limit { feed.removeLast(feed.count - limit) }
             }
-        case .indexUpdated, .indexProgress, .sourceSynced, .engineStatus, .unknown:
+        case .indexUpdated, .indexProgress, .sourceSynced, .engineStatus, .syncStarted, .syncProgress, .syncFinished, .unknown:
             break
         }
     }

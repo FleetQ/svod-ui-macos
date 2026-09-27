@@ -610,6 +610,65 @@ public struct SyncAck: Codable, Hashable, Sendable {
     public var conflicts: Int?
 }
 
+/// Live two-way sync state of one vault: `GET /sync/status` and the 202 body of an async
+/// `POST /sync/now` (contract 0.35.0). running/trigger/phase describe the cycle in progress;
+/// syncStatus/head/conflicts/lastSyncedAt the last finished one (`syncing` while running).
+public struct SyncRunStatus: Codable, Hashable, Sendable {
+    public var vault: String
+    public var synced: Bool
+    public var running: Bool
+    public var trigger: String?
+    public var startedAt: String?
+    public var phase: String?
+    public var pending: Bool
+    public var syncStatus: String?
+    public var head: String?
+    public var conflicts: Int
+    public var lastSyncedAt: String?
+
+    public init(vault: String, synced: Bool = true, running: Bool, trigger: String? = nil,
+                startedAt: String? = nil, phase: String? = nil, pending: Bool = false,
+                syncStatus: String? = nil, head: String? = nil, conflicts: Int = 0, lastSyncedAt: String? = nil) {
+        self.vault = vault; self.synced = synced; self.running = running; self.trigger = trigger
+        self.startedAt = startedAt; self.phase = phase; self.pending = pending; self.syncStatus = syncStatus
+        self.head = head; self.conflicts = conflicts; self.lastSyncedAt = lastSyncedAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        vault = try c.decodeIfPresent(String.self, forKey: .vault) ?? ""
+        synced = try c.decodeIfPresent(Bool.self, forKey: .synced) ?? false
+        running = try c.decode(Bool.self, forKey: .running)
+        trigger = try c.decodeIfPresent(String.self, forKey: .trigger)
+        startedAt = try c.decodeIfPresent(String.self, forKey: .startedAt)
+        phase = try c.decodeIfPresent(String.self, forKey: .phase)
+        pending = try c.decodeIfPresent(Bool.self, forKey: .pending) ?? false
+        syncStatus = try c.decodeIfPresent(String.self, forKey: .syncStatus)
+        head = try c.decodeIfPresent(String.self, forKey: .head)
+        conflicts = try c.decodeIfPresent(Int.self, forKey: .conflicts) ?? 0
+        lastSyncedAt = try c.decodeIfPresent(String.self, forKey: .lastSyncedAt)
+    }
+}
+
+/// Answer of `POST /sync/now` sent with the async opt-in. An engine older than contract 0.35.0
+/// ignores the opt-in, holds the request for the whole cycle and answers `SyncAck`; so does a
+/// 0.35.0 engine for a vault without two-way sync. A 0.35.0 engine otherwise answers 202 with the
+/// live status at once. Told apart by shape: only the status carries `running`.
+public enum SyncNowResult: Decodable, Hashable, Sendable {
+    case finished(SyncAck)
+    case started(SyncRunStatus)
+
+    private enum Probe: String, CodingKey { case running }
+
+    public init(from decoder: Decoder) throws {
+        if try decoder.container(keyedBy: Probe.self).contains(.running) {
+            self = .started(try SyncRunStatus(from: decoder))
+        } else {
+            self = .finished(try SyncAck(from: decoder))
+        }
+    }
+}
+
 public struct Metrics: Codable, Hashable, Sendable {
     public struct Write: Codable, Hashable, Sendable {
         public var count: Int64

@@ -603,7 +603,11 @@ public class MockSvodClient: SvodClient, @unchecked Sendable {
         try await gate(); return BackupAck(ok: true, head: "32af73c")
     }
     @discardableResult
-    public func syncNow(vault: String?) async throws -> SyncAck {
+    public func syncNow(vault: String?) async throws -> SyncNowResult {
+        try await gate()
+        throw SvodClientError.notImplemented("Multi-host sync is not available yet (Step 7).")
+    }
+    public func syncStatus(vault: String?) async throws -> SyncRunStatus {
         try await gate()
         throw SvodClientError.notImplemented("Multi-host sync is not available yet (Step 7).")
     }

@@ -400,9 +400,16 @@ public final class LiveSvodClient: SvodClient, @unchecked Sendable {
     public func backupNow(vault: String?) async throws -> BackupAck {
         try await sendNoBody("/api/v1/backup/now", method: "POST", query: vaultQuery(vault), timeout: 180)
     }
+    /// Async opt-in (contract 0.35.0) sent both ways the engine accepts it. An older engine ignores
+    /// both and holds the request for the whole cycle, hence the long timeout stays.
     @discardableResult
-    public func syncNow(vault: String?) async throws -> SyncAck {
-        try await sendNoBody("/api/v1/sync/now", method: "POST", query: vaultQuery(vault), timeout: 180)
+    public func syncNow(vault: String?) async throws -> SyncNowResult {
+        try await sendNoBody("/api/v1/sync/now", method: "POST",
+                             query: [URLQueryItem(name: "wait", value: "false")] + vaultQuery(vault),
+                             headers: ["Prefer": "respond-async"], timeout: 180)
+    }
+    public func syncStatus(vault: String?) async throws -> SyncRunStatus {
+        try await get("/api/v1/sync/status", query: vaultQuery(vault))
     }
 
     // MARK: embeddings & indexing (contract 0.8.0)
@@ -529,9 +536,11 @@ public final class LiveSvodClient: SvodClient, @unchecked Sendable {
     }
 
     private func sendNoBody<T: Decodable>(_ path: String, method: String,
-                                          query: [URLQueryItem] = [], timeout: TimeInterval? = nil) async throws -> T {
+                                          query: [URLQueryItem] = [], headers: [String: String] = [:],
+                                          timeout: TimeInterval? = nil) async throws -> T {
         var req = URLRequest(url: makeURL(path, query: query))
         req.httpMethod = method
+        for (k, v) in headers { req.setValue(v, forHTTPHeaderField: k) }
         if let timeout { req.timeoutInterval = timeout }
         authorize(&req)
         return try await perform(req)

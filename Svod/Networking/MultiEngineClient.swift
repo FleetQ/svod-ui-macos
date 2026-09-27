@@ -387,8 +387,11 @@ public final class MultiEngineClient: SvodClient, @unchecked Sendable {
         let t = target(vault); return try await t.client.backupNow(vault: t.vault)
     }
     @discardableResult
-    public func syncNow(vault: String?) async throws -> SyncAck {
+    public func syncNow(vault: String?) async throws -> SyncNowResult {
         let t = target(vault); return try await t.client.syncNow(vault: t.vault)
+    }
+    public func syncStatus(vault: String?) async throws -> SyncRunStatus {
+        let t = target(vault); return try await t.client.syncStatus(vault: t.vault)
     }
 
     // MARK: embeddings & indexing (per-vault)
