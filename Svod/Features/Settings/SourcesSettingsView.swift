@@ -286,7 +286,7 @@ struct SourcesSettingsView: View {
             unavailable = false
         } catch let e as SvodClientError where e.isNotImplemented {
             unavailable = true
-        } catch let e as SvodClientError where e.isOffline {
+        } catch let e as SvodClientError where e.isOffline || e.isTimedOut {
             // leave whatever we have; not a hard failure
             _ = e
         } catch {

@@ -544,13 +544,7 @@ public final class LiveSvodClient: SvodClient, @unchecked Sendable {
         authorize(&req)
         let data: Data, response: URLResponse
         do { (data, response) = try await session.data(for: req) }
-        catch let e as URLError {
-            switch e.code {
-            case .cannotConnectToHost, .cannotFindHost, .networkConnectionLost,
-                 .notConnectedToInternet, .timedOut: throw SvodClientError.offline
-            default: throw SvodClientError.transport(e.localizedDescription)
-            }
-        }
+        catch let e as URLError { throw Self.clientError(for: e) }
         guard let http = response as? HTTPURLResponse else { throw SvodClientError.invalidResponse }
         switch http.statusCode {
         case 200...299: return
@@ -560,19 +554,26 @@ public final class LiveSvodClient: SvodClient, @unchecked Sendable {
         }
     }
 
+    /// A timeout is not "engine down": a long sync can outlast the request timeout on an engine
+    /// that is up and still working, and `.offline` would drop the app into the disconnected state.
+    static func clientError(for e: URLError) -> SvodClientError {
+        switch e.code {
+        case .cannotConnectToHost, .cannotFindHost, .networkConnectionLost, .notConnectedToInternet:
+            return .offline
+        case .timedOut:
+            return .timedOut
+        default:
+            return .transport(e.localizedDescription)
+        }
+    }
+
     private func perform<T: Decodable>(_ request: URLRequest) async throws -> T {
         let data: Data
         let response: URLResponse
         do {
             (data, response) = try await session.data(for: request)
         } catch let urlErr as URLError {
-            switch urlErr.code {
-            case .cannotConnectToHost, .cannotFindHost, .networkConnectionLost,
-                 .notConnectedToInternet, .timedOut:
-                throw SvodClientError.offline
-            default:
-                throw SvodClientError.transport(urlErr.localizedDescription)
-            }
+            throw Self.clientError(for: urlErr)
         }
         guard let http = response as? HTTPURLResponse else { throw SvodClientError.invalidResponse }
 

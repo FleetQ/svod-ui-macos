@@ -457,7 +457,7 @@ struct IndexingSettingsView: View {
             await refreshStatus()
             await checkHealth()
         } catch let e as SvodClientError where e.isNotImplemented { unavailable = true }
-        catch let e as SvodClientError where e.isOffline { _ = e }
+        catch let e as SvodClientError where e.isOffline || e.isTimedOut { _ = e }
         catch { unavailable = true }
     }
 
@@ -475,7 +475,7 @@ struct IndexingSettingsView: View {
         let req = EmbedderRequest(provider: cur.provider, model: cur.model,
                                   endpoint: cur.endpoint, apiKeyRef: keyRef)
         do { health = try await client.testEmbedder(req, vault: vaultID) }
-        catch let e as SvodClientError where e.isOffline { health = nil }   // engine itself is down
+        catch let e as SvodClientError where e.isOffline || e.isTimedOut { health = nil }   // engine down or busy: unknown, not failed
         catch { health = EmbedderTestResult(ok: false, dimension: nil, latencyMs: nil, error: nil) }
     }
 

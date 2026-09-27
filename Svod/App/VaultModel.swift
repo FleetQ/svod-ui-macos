@@ -53,8 +53,8 @@ public final class VaultModel: ObservableObject {
         } catch let e as SvodClientError where e.isNotImplemented || e.isNotFound {
             // Engine has no multi-vault concept — present a single implicit vault.
             fallBackToSingleVault()
-        } catch let e as SvodClientError where e.isOffline {
-            loadState = .failed("offline")
+        } catch let e as SvodClientError where e.isOffline || e.isTimedOut {
+            loadState = .failed(e.isOffline ? "offline" : "timed out")
         } catch {
             // Unknown failure — degrade to single vault rather than blocking the app.
             fallBackToSingleVault()

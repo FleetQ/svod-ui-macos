@@ -145,6 +145,8 @@ struct ConnectionSettingsView: View {
         do {
             let r = try await probe.ready()
             testResult = r.ready ? "Reachable ✓ (ready)" : "Reachable, not ready"
+        } catch let e as SvodClientError where e.isTimedOut {
+            testResult = "No answer in time (engine busy?)"
         } catch {
             testResult = "Unreachable"
         }
