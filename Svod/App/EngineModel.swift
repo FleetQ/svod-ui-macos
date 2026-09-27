@@ -1,5 +1,6 @@
 import SwiftUI
 import Foundation
+import Combine
 
 // ════════════════════════════════════════════════════════════════════════
 // OWNED BY TEAMMATE 5 — Engine Lifecycle (Features/Engine/)
@@ -39,6 +40,10 @@ public final class EngineModel: ObservableObject {
 
     /// The 0.33.0 memory review queue (`/memory/review`): approve / decline provisional memories.
     public var supportsMemoryReview: Bool { apiVersionAtLeast(0, 33) }
+
+    /// Every sync.* event, one by one. `latestEvent` alone is lossy: a later event in the same
+    /// run-loop turn replaces it before an `onChange` sees it, and "Sync now" must not miss the finish.
+    public let syncEvents = PassthroughSubject<SvodEvent, Never>()
 
     private var eventTask: Task<Void, Never>?
     private var retryTask: Task<Void, Never>?
@@ -219,6 +224,7 @@ public final class EngineModel: ObservableObject {
                     if Task.isCancelled { break }
                     self.app?.latestEvent = event
                     self.app?.activity.ingest(event)
+                    if [.syncStarted, .syncProgress, .syncFinished].contains(event.type) { self.syncEvents.send(event) }
                     if event.type == .indexUpdated { await self.refreshIndex() }
                     if event.type == .fileChanged, let path = event.data.path {
                         // Reconcile the open note when an external writer (sync pull,

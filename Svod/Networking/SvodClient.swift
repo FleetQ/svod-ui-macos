@@ -203,8 +203,12 @@ public protocol SvodClient: AnyObject, Sendable {
     func reindex(vault: String?) async throws -> MaintenanceAck
     @discardableResult
     func backupNow(vault: String?) async throws -> BackupAck
+    /// Start (or join) a sync cycle with the async opt-in (contract 0.35.0). Older engines ignore
+    /// the opt-in and answer `.finished` after the whole cycle, as before.
     @discardableResult
-    func syncNow(vault: String?) async throws -> SyncAck
+    func syncNow(vault: String?) async throws -> SyncNowResult
+    /// Live sync state of the vault (contract 0.35.0); `.notFound` on older engines.
+    func syncStatus(vault: String?) async throws -> SyncRunStatus
 
     // Embeddings & indexing (engine v1.2.0 / contract 0.8.0; global embedder).
     // Throw `.notImplemented` on 501 so the UI degrades on older engines.

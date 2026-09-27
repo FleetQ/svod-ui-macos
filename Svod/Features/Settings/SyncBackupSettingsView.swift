@@ -20,6 +20,8 @@ struct SyncBackupSettingsView: View {
     @State private var busy = false
     @State private var busyLabel: String?
     @State private var elapsed = 0
+    /// The cycle "Sync now" follows on an engine with the async mode (contract 0.35.0).
+    @State private var syncRun: SyncRun?
     @State private var repoName = ""
     // Auto-backup schedule mirrors (loaded from the engine config; edits write back).
     @State private var autoInterval = 0       // minutes; 0 = off
@@ -72,7 +74,7 @@ struct SyncBackupSettingsView: View {
     private var progressText: String {
         let t = elapsed > 0 ? " · \(elapsed)s" : ""
         let hint = elapsed >= 6 ? " — large vaults or the first push can take a while" : ""
-        return (busyLabel ?? "Working") + "…" + t + hint
+        return (syncRun?.progressLabel ?? busyLabel ?? "Working") + "…" + t + hint
     }
 
     /// Two-way sync is available to run once it's been enabled for this vault.
@@ -193,11 +195,7 @@ struct SyncBackupSettingsView: View {
                             return "Backup failed"
                         } } }
                             .disabled((config?.backupRemote ?? "").isEmpty)
-                        Button("Sync now") { Task { await run("Syncing") {
-                            let a = try await client.syncNow(vault: vaultID)
-                            await loadConfig()
-                            return syncMessage(a)
-                        } } }
+                        Button("Sync now") { Task { await run("Syncing") { try await syncNow() } } }
                             .disabled(syncUnavailable)
                             .help(syncUnavailable
                                   ? "Turn on “Keep this vault in sync” above first. Until then this vault only backs up one-way."
@@ -245,6 +243,7 @@ struct SyncBackupSettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .onReceive(app.engine.syncEvents) { syncRun?.apply($0) }
         .task {
             await app.engine.loadMeta()
             await loadConfig()
@@ -442,6 +441,47 @@ struct SyncBackupSettingsView: View {
             let c = try await client.setBackup(vault: vaultID, remote: backupRemote, enabled: backupEnabled)
             config = c
             return "Backup config saved"
+        }
+    }
+
+    /// Async mode (contract 0.35.0): the engine answers at once and the cycle is followed through
+    /// sync.* events, with GET /sync/status as the fallback. An older engine ignores the opt-in and
+    /// answers the old blocking SyncAck, so it lands in `.finished` exactly as before.
+    private func syncNow() async throws -> String {
+        defer { syncRun = nil }
+        // Only way to tell "joined another manual sync" from "started one": the engine joins silently.
+        // Fails harmlessly (404) on an engine without /sync/status.
+        let wasRunning = (try? await client.syncStatus(vault: vaultID))?.running == true
+        switch try await client.syncNow(vault: vaultID) {
+        case .finished(let ack):
+            await loadConfig()
+            return syncMessage(ack)
+        case .started(let accepted):
+            syncRun = SyncRun(vault: vaultID, accepted: accepted, wasRunning: wasRunning)
+            // Events arrive only while the stream is up, and the app cannot see whether a central
+            // engine's own stream is: poll often then, and rarely as a safety net otherwise.
+            let streamLive = app.connection == .connected && app.vault.activeVault?.isRemote != true
+            let pollEvery: Duration = streamLive ? .seconds(10) : .seconds(2)
+            // First poll after 1 s: a fast cycle's sync.finished can arrive before this 202 is handled.
+            var lastPoll = ContinuousClock.now - pollEvery + .seconds(1)
+            var failures = 0
+            while syncRun?.isFinished == false {
+                try await Task.sleep(for: .milliseconds(250))
+                guard syncRun?.isFinished == false, ContinuousClock.now - lastPoll >= pollEvery else { continue }
+                lastPoll = .now
+                do {
+                    let s = try await client.syncStatus(vault: vaultID)
+                    syncRun?.apply(s)
+                    failures = 0
+                } catch {
+                    failures += 1
+                    if failures >= 5 { throw error }
+                }
+            }
+            let text = syncRun?.resultText ?? "Synced"
+            await loadConfig()
+            await app.engine.loadMeta()
+            return text
         }
     }
 
