@@ -462,7 +462,8 @@ struct SyncBackupSettingsView: View {
             // engine's own stream is: poll often then, and rarely as a safety net otherwise.
             let streamLive = app.connection == .connected && app.vault.activeVault?.isRemote != true
             let pollEvery: Duration = streamLive ? .seconds(10) : .seconds(2)
-            var lastPoll = ContinuousClock.now
+            // First poll after 1 s: a fast cycle's sync.finished can arrive before this 202 is handled.
+            var lastPoll = ContinuousClock.now - pollEvery + .seconds(1)
             var failures = 0
             while syncRun?.isFinished == false {
                 try await Task.sleep(for: .milliseconds(250))
