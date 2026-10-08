@@ -504,11 +504,15 @@ public struct Conflicts: Codable, Hashable, Sendable {
         public var ours: String?
         public var theirs: String?
         public var ts: Int64?
+        /// Contract 0.36.0+: the incoming version tripped the engine's secret scanner and was never written.
+        public var quarantined: Bool?
         public var id: String { path }
         public init(path: String, reasons: [String]? = nil,
-                    base: String? = nil, ours: String? = nil, theirs: String? = nil, ts: Int64? = nil) {
+                    base: String? = nil, ours: String? = nil, theirs: String? = nil, ts: Int64? = nil,
+                    quarantined: Bool? = nil) {
             self.path = path; self.reasons = reasons
             self.base = base; self.ours = ours; self.theirs = theirs; self.ts = ts
+            self.quarantined = quarantined
         }
     }
     public var conflicts: [Item]
@@ -522,6 +526,33 @@ public struct ResolveConflictRequest: Codable, Hashable, Sendable {
     public var expectedRevision: String?
     public init(path: String, content: String, expectedRevision: String? = nil) {
         self.path = path; self.content = content; self.expectedRevision = expectedRevision
+    }
+}
+
+/// Settle a sync conflict without writing content — contract 0.36.0 `resolution` on `POST /conflicts/resolve`.
+public enum ConflictResolution: String, Codable, Hashable, Sendable {
+    /// Keep the local side as it is (for a file only the other machine added: don't take it).
+    case keepMine
+    /// Take the incoming version as is. For a quarantined version the engine needs `acknowledgeSecrets`.
+    case acceptIncoming
+}
+
+public struct SettleConflictRequest: Codable, Hashable, Sendable {
+    public var path: String
+    public var resolution: ConflictResolution
+    public var acknowledgeSecrets: Bool
+    public init(path: String, resolution: ConflictResolution, acknowledgeSecrets: Bool = false) {
+        self.path = path; self.resolution = resolution; self.acknowledgeSecrets = acknowledgeSecrets
+    }
+}
+
+/// `POST /conflicts/resolve` answer for keepMine/acceptIncoming: the next sync cycle applies it.
+public struct SettleConflictResult: Codable, Hashable, Sendable {
+    public var path: String
+    public var resolution: String?
+    public var remainingConflicts: Int?
+    public init(path: String, resolution: String? = nil, remainingConflicts: Int? = nil) {
+        self.path = path; self.resolution = resolution; self.remainingConflicts = remainingConflicts
     }
 }
 

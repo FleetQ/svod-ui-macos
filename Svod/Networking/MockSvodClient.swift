@@ -575,6 +575,12 @@ public class MockSvodClient: SvodClient, @unchecked Sendable {
         return WriteResult(path: path, revision: "rev-resolved", commit: Self.newCommit())
     }
 
+    @discardableResult
+    public func settleConflict(path: String, resolution: ConflictResolution, acknowledgeSecrets: Bool) async throws -> SettleConflictResult {
+        try await gate()
+        return SettleConflictResult(path: path, resolution: resolution.rawValue, remainingConflicts: 0)
+    }
+
     // sync & backup — canned config + acks; syncNow exercises the 501 path.
     public func syncConfig(vault: String?) async throws -> SyncConfig {
         try await gate()

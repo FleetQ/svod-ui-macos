@@ -14,6 +14,7 @@ import SwiftUI
 struct ConflictMergeView: View {
     @EnvironmentObject var app: AppModel
     @StateObject private var merge: ConflictMergeModel
+    @State private var confirmAcceptQuarantined = false
 
     /// Non-nil only in the conflicts-list path — called when the sheet should close.
     private let onDismiss: (() -> Void)?
@@ -64,6 +65,10 @@ struct ConflictMergeView: View {
                     .foregroundStyle(ThemeColor.textSecondary)
             }
             Spacer()
+            if merge.isQuarantined {
+                StatusPill("quarantined", tone: .conflict)
+                    .help("The incoming version looks like it contains a secret, so it was never written.")
+            }
             StatusPill("sync conflict", tone: .conflict)
         }
         .padding(Spacing.lg)
@@ -116,6 +121,21 @@ struct ConflictMergeView: View {
                     .lineLimit(2)
             }
             Spacer()
+            if merge.isSyncConflict {
+                Button("Keep Mine") {
+                    Task { if await merge.settle(.keepMine) { dismiss() } }
+                }
+                .buttonStyle(SvodButtonStyle(.secondary))
+                .disabled(merge.isSaving)
+                .help("Keep the local version and drop the incoming one (it stays in history)")
+                Button("Accept Incoming") {
+                    if merge.isQuarantined { confirmAcceptQuarantined = true }
+                    else { Task { if await merge.settle(.acceptIncoming) { dismiss() } } }
+                }
+                .buttonStyle(SvodButtonStyle(.secondary))
+                .disabled(merge.isSaving)
+                .help("Take the incoming version as it is")
+            }
             Button("Cancel") { dismiss() }
                 .buttonStyle(SvodButtonStyle(.secondary))
                 .keyboardShortcut(.cancelAction)
@@ -135,6 +155,15 @@ struct ConflictMergeView: View {
         }
         .padding(Spacing.lg)
         .background(ThemeColor.surface)
+        .confirmationDialog("Accept a version flagged for secrets?",
+                            isPresented: $confirmAcceptQuarantined, titleVisibility: .visible) {
+            Button("Accept Anyway", role: .destructive) {
+                Task { if await merge.settle(.acceptIncoming) { dismiss() } }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The secret scanner flagged the incoming version of \(merge.path). Accepting writes it into this vault as it is, and the override is recorded in the vault's audit log and in the merge commit.")
+        }
     }
 
     private func dismiss() {

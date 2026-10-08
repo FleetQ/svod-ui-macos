@@ -364,6 +364,10 @@ public final class MultiEngineClient: SvodClient, @unchecked Sendable {
     public func resolveConflict(path: String, content: String, expectedRevision: String?) async throws -> WriteResult {
         try await current.resolveConflict(path: path, content: content, expectedRevision: expectedRevision)
     }
+    @discardableResult
+    public func settleConflict(path: String, resolution: ConflictResolution, acknowledgeSecrets: Bool) async throws -> SettleConflictResult {
+        try await current.settleConflict(path: path, resolution: resolution, acknowledgeSecrets: acknowledgeSecrets)
+    }
 
     // MARK: sync & backup (per-vault)
     public func syncConfig(vault: String?) async throws -> SyncConfig {

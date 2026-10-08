@@ -191,6 +191,10 @@ public protocol SvodClient: AnyObject, Sendable {
     /// Resolve a sync conflict with merged content (engine v0.3.0+).
     @discardableResult
     func resolveConflict(path: String, content: String, expectedRevision: String?) async throws -> WriteResult
+    /// Settle a sync conflict without content: keep the local side or take the incoming version
+    /// (engine contract 0.36.0+). `acknowledgeSecrets` is the explicit override for a quarantined version.
+    @discardableResult
+    func settleConflict(path: String, resolution: ConflictResolution, acknowledgeSecrets: Bool) async throws -> SettleConflictResult
 
     // Sync & backup (engine v0.4.0; per-vault via `vault`). Throw `.notImplemented`
     // when the engine returns 501 so the UI degrades to a "needs engine support" note.

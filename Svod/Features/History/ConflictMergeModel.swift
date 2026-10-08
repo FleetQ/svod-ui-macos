@@ -107,6 +107,31 @@ final class ConflictMergeModel: ObservableObject {
         if !resolved { merged = yours }
     }
 
+    /// The conflict came from the sync list (not a write 409): keep-mine / accept-incoming apply.
+    var isSyncConflict: Bool {
+        if case .conflictItem = source { return true }
+        return false
+    }
+
+    /// The incoming version tripped the engine's secret scanner and was never written.
+    var isQuarantined: Bool {
+        guard case .conflictItem(let item, _) = source else { return false }
+        return item.quarantined == true
+    }
+
+    /// Settle a sync conflict without writing content. Accepting a quarantined version
+    /// passes the explicit secrets acknowledgement — the caller asked the user first.
+    func settle(_ resolution: ConflictResolution) async -> Bool {
+        guard case .conflictItem(let item, let listModel) = source else { return false }
+        isSaving = true
+        errorMessage = nil
+        defer { isSaving = false }
+        let ok = await listModel.settle(path: item.path, resolution: resolution,
+                                        acknowledgeSecrets: resolution == .acceptIncoming && isQuarantined)
+        if !ok { errorMessage = listModel.errorMessage }
+        return ok
+    }
+
     func keepYours() { merged = yours; resolved = true }
     func keepTheirs() { merged = theirs; resolved = true }
     func mergedEdited() { resolved = true }

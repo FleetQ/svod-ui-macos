@@ -372,6 +372,12 @@ public final class LiveSvodClient: SvodClient, @unchecked Sendable {
                        body: ResolveConflictRequest(path: path, content: content, expectedRevision: expectedRevision))
     }
 
+    @discardableResult
+    public func settleConflict(path: String, resolution: ConflictResolution, acknowledgeSecrets: Bool) async throws -> SettleConflictResult {
+        try await send("/api/v1/conflicts/resolve", method: "POST",
+                       body: SettleConflictRequest(path: path, resolution: resolution, acknowledgeSecrets: acknowledgeSecrets))
+    }
+
     // MARK: sync & backup (per-vault via ?vault=)
     private func vaultQuery(_ vault: String?) -> [URLQueryItem] {
         vault.map { [URLQueryItem(name: "vault", value: $0)] } ?? []
