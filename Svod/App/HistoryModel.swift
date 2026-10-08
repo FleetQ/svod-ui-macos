@@ -177,6 +177,21 @@ public final class ConflictsListModel: ObservableObject {
         await load()
     }
 
+    /// Settle a conflict without content (keep mine / accept incoming). Returns true on success.
+    func settle(path: String, resolution: ConflictResolution, acknowledgeSecrets: Bool) async -> Bool {
+        do {
+            _ = try await client.settleConflict(path: path, resolution: resolution, acknowledgeSecrets: acknowledgeSecrets)
+            await onResolved(path: path)
+            return true
+        } catch let e as SvodClientError {
+            errorMessage = e.errorDescription
+            return false
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
+    }
+
     /// Resolve a conflict with merged content. Returns true on success.
     /// On 409 (changed again): updates the active item with new content and
     /// returns false so the merge view stays open with a re-fetch message.
