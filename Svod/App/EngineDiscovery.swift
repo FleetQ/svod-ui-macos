@@ -23,9 +23,11 @@ public struct EngineDiscovery: Codable, Equatable, Sendable {
 
     /// The endpoint to switch to, or nil to keep the configured one. Only a loopback engine
     /// replaces a loopback endpoint: a remote address the user typed in is never overridden by
-    /// a local file.
-    public func endpointToAdopt(currentHost: String, currentPort: Int) -> (host: String, port: Int)? {
-        guard EngineAddress.isLoopback(currentHost), EngineAddress.isLoopback(host),
+    /// a local file. Neither is an endpoint the user pinned in Settings → Connection: a loopback
+    /// port can be an SSH tunnel to a central engine, and while the tunnel is down the local
+    /// engine named here is a different engine with different vaults, not the same one moved.
+    public func endpointToAdopt(currentHost: String, currentPort: Int, pinned: Bool = false) -> (host: String, port: Int)? {
+        guard !pinned, EngineAddress.isLoopback(currentHost), EngineAddress.isLoopback(host),
               (1...65535).contains(appApiPort),
               host != currentHost || appApiPort != currentPort
         else { return nil }

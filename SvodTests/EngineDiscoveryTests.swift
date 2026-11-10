@@ -31,4 +31,20 @@ final class EngineDiscoveryTests: XCTestCase {
         let remote = EngineDiscovery(host: "0.0.0.0", appApiPort: 7619, mcpPort: nil, launchdLabel: nil)
         XCTAssertNil(remote.endpointToAdopt(currentHost: "127.0.0.1", currentPort: 7517))
     }
+
+    /// 7619 is an SSH tunnel to a central engine; 7629 is a local engine with other vaults. While
+    /// the tunnel is down the app must not switch to 7629 and stay there.
+    func testNeverLeavesAPinnedEndpoint() {
+        let local = EngineDiscovery(host: "127.0.0.1", appApiPort: 7629, mcpPort: 7630, launchdLabel: nil)
+        XCTAssertNil(local.endpointToAdopt(currentHost: "127.0.0.1", currentPort: 7619, pinned: true))
+        XCTAssertEqual(local.endpointToAdopt(currentHost: "127.0.0.1", currentPort: 7619, pinned: false)?.port, 7629)
+    }
+
+    func testOldInstallsPinOnlyAnEndpointTheUserTypedIn() {
+        let local = EngineDiscovery(host: "127.0.0.1", appApiPort: 7629, mcpPort: 7630, launchdLabel: nil)
+        XCTAssertFalse(SettingsStore.wasChosenByUser(host: "127.0.0.1", port: 7517, discovered: local), "default")
+        XCTAssertFalse(SettingsStore.wasChosenByUser(host: "127.0.0.1", port: 7629, discovered: local), "taken from the discovery file")
+        XCTAssertTrue(SettingsStore.wasChosenByUser(host: "127.0.0.1", port: 7619, discovered: local))
+        XCTAssertTrue(SettingsStore.wasChosenByUser(host: "127.0.0.1", port: 7619, discovered: nil))
+    }
 }

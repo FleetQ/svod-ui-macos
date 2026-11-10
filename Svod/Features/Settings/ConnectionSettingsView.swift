@@ -132,6 +132,7 @@ struct ConnectionSettingsView: View {
         if let err = SettingsStore.validate(host: host, port: p) { validation = err; return }
         settings.endpointHost = host.trimmingCharacters(in: .whitespaces)
         settings.endpointPort = p
+        settings.endpointPinned = true
         app.applyEndpoint()
     }
 
