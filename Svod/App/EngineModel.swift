@@ -105,9 +105,12 @@ public final class EngineModel: ObservableObject {
     /// The configured endpoint didn't answer. If the engine's discovery file names another
     /// loopback endpoint and that one is ready, switch to it and persist it, the same as editing
     /// Settings → Connection. The probe keeps a stale file from moving the app off a working port.
+    /// A pinned endpoint is never left: the app stays offline and retries it instead.
     private func adoptDiscoveredEndpoint() async -> Bool {
         guard let app, let found = EngineDiscovery.load(),
-              let target = found.endpointToAdopt(currentHost: app.settings.endpointHost, currentPort: app.settings.endpointPort),
+              let target = found.endpointToAdopt(currentHost: app.settings.endpointHost,
+                                                 currentPort: app.settings.endpointPort,
+                                                 pinned: app.settings.endpointPinned),
               let url = URL(string: "http://\(target.host):\(target.port)"),
               let ready = try? await LiveSvodClient(baseURL: url).ready(), ready.ready
         else { return false }

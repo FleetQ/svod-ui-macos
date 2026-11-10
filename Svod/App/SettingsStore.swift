@@ -29,6 +29,9 @@ public final class SettingsStore: ObservableObject {
     // MARK: Connection
     @Published public var endpointHost: String { didSet { d.set(endpointHost, forKey: key("endpointHost")) } }
     @Published public var endpointPort: Int { didSet { d.set(endpointPort, forKey: key("endpointPort")) } }
+    /// The user chose this endpoint in Settings → Connection, so the engine discovery file must
+    /// not move the app off it when it stops answering.
+    @Published public var endpointPinned: Bool { didSet { d.set(endpointPinned, forKey: key("endpointPinned")) } }
     @Published public var autoStartEngine: Bool { didSet { d.set(autoStartEngine, forKey: key("autoStartEngine")) } }
     @Published public var autoReconnect: Bool { didSet { d.set(autoReconnect, forKey: key("autoReconnect")) } }
 
@@ -78,6 +81,10 @@ public final class SettingsStore: ObservableObject {
 
         endpointHost = s("endpointHost", "127.0.0.1")
         endpointPort = i("endpointPort", 7517)
+        endpointPinned = ud.object(forKey: "svod.settings.endpointPinned") == nil
+            ? Self.wasChosenByUser(host: s("endpointHost", "127.0.0.1"), port: i("endpointPort", 7517),
+                                   discovered: EngineDiscovery.load())
+            : ud.bool(forKey: "svod.settings.endpointPinned")
         autoStartEngine = b("autoStartEngine", true)
         autoReconnect = b("autoReconnect", true)
 
@@ -109,6 +116,14 @@ public final class SettingsStore: ObservableObject {
         reopenLastNote = b("reopenLastNote", true)
         lastOpenedPath = d.string(forKey: "svod.settings.lastOpenedPath")
         lastOpenedVault = d.string(forKey: "svod.settings.lastOpenedVault")
+    }
+
+    /// For installs from before `endpointPinned` existed: the default endpoint and one the app
+    /// took over from the discovery file were not chosen by the user; anything else was typed in.
+    nonisolated static func wasChosenByUser(host: String, port: Int, discovered: EngineDiscovery?) -> Bool {
+        if host == "127.0.0.1" && port == 7517 { return false }
+        if let discovered, discovered.host == host, discovered.appApiPort == port { return false }
+        return true
     }
 
     /// Endpoint as a URL, derived from host + port. Loopback assumption preserved.
